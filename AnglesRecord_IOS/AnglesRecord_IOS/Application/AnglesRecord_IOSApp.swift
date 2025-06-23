@@ -8,9 +8,16 @@
 import SwiftUI
 import SwiftData
 
+enum AuthStatus {
+    case loading
+    case authenticated
+    case unauthenticated
+}
+
 @main
 struct AnglesRecord_IOSApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    @State private var authStatus: AuthStatus = .loading
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([ RecordListModel.self ])
@@ -20,8 +27,68 @@ struct AnglesRecord_IOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+                switch authStatus {
+                case .loading:
+                    SplashView()
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { // 살짝 딜레이 주면 더 자연스러움
+                                if let _ = KeychainHelper.load("verifiedAccessCode") {
+                                    authStatus = .authenticated
+                                } else {
+                                    authStatus = .unauthenticated
+                                }
+
+                                if isDeviceJailbroken() {
+                                    print("🚨 탈옥 감지됨")
+                                }
+                            }
+                        }
+
+                case .authenticated:
+                    MainView()
+
+                case .unauthenticated:
+                    AuthView()
+                }
+            }
         }
         .modelContainer(sharedModelContainer)
+    }
+
+    func checkAuthenticationStatus() -> Bool {
+        return KeychainHelper.load("verifiedAccessCode") != nil
+    }
+
+    func isDeviceJailbroken() -> Bool {
+        let suspiciousPaths = [
+            "/Applications/Cydia.app",
+            "/Library/MobileSubstrate/MobileSubstrate.dylib",
+            "/bin/bash",
+            "/usr/sbin/sshd",
+            "/etc/apt",
+            "/private/var/lib/apt/"
+        ]
+
+        for path in suspiciousPaths {
+            if FileManager.default.fileExists(atPath: path) {
+                return true
+            }
+        }
+
+        if canOpen(path: "/Applications/Cydia.app") {
+            return true
+        }
+
+        return false
+    }
+
+    func canOpen(path: String) -> Bool {
+        let file = fopen(path, "r")
+        if file != nil {
+            fclose(file)
+            return true
+        }
+        return false
     }
 }

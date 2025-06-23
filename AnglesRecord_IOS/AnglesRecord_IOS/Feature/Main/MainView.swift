@@ -23,13 +23,9 @@ struct MainView: View {
                     Spacer()
                     
                     // Dark Mode Toggle
-                    Button(action: {
-                        isDarkMode.toggle()
-                    }) {
-                        Image(systemName: isDarkMode ? "moon.fill" : "sun.max.fill")
-                            .font(.title2)
-                            .foregroundColor(.primary)
-                            .symbolRenderingMode(.hierarchical)
+                    Button("인증 초기화") {
+                        KeychainHelper.delete("verifiedAccessCode")
+                        print("✅ 인증 리셋됨")
                     }
                 }
                 .padding()
