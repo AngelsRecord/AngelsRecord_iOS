@@ -32,7 +32,7 @@ struct AnglesRecord_IOSApp: App {
                 case .loading:
                     SplashView()
                         .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { // 살짝 딜레이 주면 더 자연스러움
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                                 if let _ = KeychainHelper.load("verifiedAccessCode") {
                                     authStatus = .authenticated
                                 } else {
