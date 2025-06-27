@@ -9,7 +9,6 @@ struct MainView: View {
     @StateObject private var recordListViewModel = RecordListViewModel()
     @State private var showingFilePicker = false
     @State private var selectedRecord: RecordListModel?
-    @AppStorage("isDarkMode") private var isDarkMode = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -39,7 +38,6 @@ struct MainView: View {
         ) { result in
             handleFileImport(result)
         }
-        .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear {
             recordListViewModel.fetchEpisodes()
         }
@@ -52,15 +50,6 @@ struct MainView: View {
                 .fontWeight(.bold)
 
             Spacer()
-
-            Button(action: {
-                isDarkMode.toggle()
-            }) {
-                Image(systemName: isDarkMode ? "moon.fill" : "sun.max.fill")
-                    .font(.title2)
-                    .foregroundColor(.primary)
-                    .symbolRenderingMode(.hierarchical)
-            }
         }
         .padding()
     }
