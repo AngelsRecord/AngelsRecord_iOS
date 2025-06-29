@@ -103,20 +103,7 @@ struct MainView: View {
         .background(Color(UIColor.secondarySystemBackground))
         .cornerRadius(12)
         .onTapGesture {
-            let localURL = recordListViewModel.getLocalFileURL(for: episode.fileName)
-            let asset = AVURLAsset(url: localURL)
-            let duration = CMTimeGetSeconds(asset.duration)
-            let record = RecordListModel(title: episode.title, artist: episode.description, duration: duration, fileURL: localURL)
-
-            withAnimation(.spring()) {
-                if selectedRecord?.id == record.id {
-                    selectedRecord = nil
-                    audioPlayer.stop()
-                } else {
-                    selectedRecord = record
-                    audioPlayer.play(record)
-                }
-            }
+            playEpisode(episode)
         }
     }
 
@@ -140,6 +127,23 @@ struct MainView: View {
         formatter.dateStyle = .medium
         formatter.locale = Locale(identifier: "ko_KR")
         return formatter.string(from: date)
+    }
+
+    private func playEpisode(_ episode: Episode) {
+        let localURL = recordListViewModel.getLocalFileURL(for: episode.fileName)
+        let asset = AVURLAsset(url: localURL)
+        let duration = CMTimeGetSeconds(asset.duration)
+        let record = RecordListModel(title: episode.title, artist: episode.description, duration: duration, fileURL: localURL)
+
+        withAnimation(.spring()) {
+            if selectedRecord?.id == record.id {
+                selectedRecord = nil
+                audioPlayer.stop()
+            } else {
+                selectedRecord = record
+                audioPlayer.play(record)
+            }
+        }
     }
 
     private func handleFileImport(_ result: Result<[URL], Error>) {

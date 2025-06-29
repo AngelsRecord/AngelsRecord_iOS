@@ -35,7 +35,7 @@ struct PlayerView: View {
                     .padding(.top, 55)
                     .padding(.bottom, 10)
 
-                Image("albumArtPlaceholder")
+                Image("mainimage_yet")
                     .resizable()
                     .aspectRatio(1, contentMode: .fit)
                     .scaleEffect(audioPlayer.isPlaying ? 1.0 : 0.95)
