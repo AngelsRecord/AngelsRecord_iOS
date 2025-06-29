@@ -10,6 +10,8 @@ struct MainView: View {
     @StateObject private var recordListViewModel = RecordListViewModel()
     @State private var showingFilePicker = false
     @State private var selectedRecord: RecordListModel?
+    @AppStorage("isDarkMode") private var isDarkMode = false
+    @State private var showingPlayerView = false
     @State private var isLoading = false
     @State private var isRefreshing = false
 
@@ -60,6 +62,16 @@ struct MainView: View {
                         deleteRecord(record)
                     }
                 )
+                .onTapGesture {
+                    showingPlayerView = true
+                }
+                .fullScreenCover(isPresented: $showingPlayerView) {
+                    if let selected = selectedRecord {
+                        PlayerView(record: selected, audioPlayer: audioPlayer) {
+                            showingPlayerView = false
+                        }
+                    }
+                }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -237,6 +249,7 @@ struct MainView: View {
         playEpisode(latestEpisode)
     }
     
+
     private func playEpisode(_ episode: Episode) {
         let localURL = recordListViewModel.getLocalFileURL(for: episode.fileName)
         let asset = AVURLAsset(url: localURL)

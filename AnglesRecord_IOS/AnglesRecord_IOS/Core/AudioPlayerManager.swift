@@ -2,95 +2,82 @@ import Foundation
 import AVFoundation
 import Combine
 
-@MainActor
 class AudioPlayerManager: ObservableObject {
-    @Published var isPlaying = false
+    private var player: AVPlayer?
+    private var timeObserver: Any?
+    private var cancellables = Set<AnyCancellable>()
+
+    @Published var isPlaying: Bool = false
     @Published var currentTime: TimeInterval = 0
-    @Published var duration: TimeInterval = 0
-    @Published var currentRecord: RecordListModel?
-    
-    private var player: AVAudioPlayer?
-    private var timer: Timer?
-    
-    init() {
-        setupAudioSession()
-    }
-    
-    private func setupAudioSession() {
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("Failed to setup audio session: \(error)")
-        }
-    }
-    
+    @Published var duration: TimeInterval = 1  // 기본 1로 해서 divide-by-zero 방지
+
+    var currentRecord: RecordListModel?
+
+    // MARK: - Playback
+
     func play(_ record: RecordListModel) {
-        guard let fileURL = record.fileURL else { return }
-        
-        do {
-            player = try AVAudioPlayer(contentsOf: fileURL)
-            player?.prepareToPlay()
-            player?.play()
-            
-            currentRecord = record
-            isPlaying = true
-            duration = player?.duration ?? 0
-            
-            startTimer()
-        } catch {
-            print("Failed to play audio: \(error)")
+        currentRecord = record
+        let playerItem = AVPlayerItem(url: record.fileURL!)
+        player = AVPlayer(playerItem: playerItem)
+        addPeriodicTimeObserver()
+        player?.play()
+        isPlaying = true
+
+        // duration 설정
+        if record.duration > 0 {
+            self.duration = record.duration
+        } else {
+            self.duration = CMTimeGetSeconds(playerItem.asset.duration)
         }
     }
-    
+
     func togglePlayPause() {
         guard let player = player else { return }
-        
-        if player.isPlaying {
+        if isPlaying {
             player.pause()
-            isPlaying = false
-            stopTimer()
         } else {
             player.play()
-            isPlaying = true
-            startTimer()
         }
+        isPlaying.toggle()
     }
-    
-    func skip(seconds: TimeInterval) {
-        guard let player = player else { return }
-        
-        let newTime = player.currentTime + seconds
-        if newTime >= 0 && newTime <= player.duration {
-            player.currentTime = newTime
-            currentTime = newTime
-        }
-    }
-    
+
     func stop() {
-        player?.stop()
+        player?.pause()
         player = nil
         isPlaying = false
         currentTime = 0
-        duration = 0
-        currentRecord = nil
-        stopTimer()
+        duration = 1
     }
-    
-    private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-            Task { @MainActor in
-                self.currentTime = self.player?.currentTime ?? 0
-                
-                if let player = self.player, !player.isPlaying && self.currentTime >= self.duration - 0.1 {
-                    self.stop()
-                }
-            }
+
+    func skip(seconds: Double) {
+        let newTime = currentTime + seconds
+        seek(to: newTime)
+    }
+
+    func seek(to time: TimeInterval) {
+        guard let player = player else { return }
+        let cmTime = CMTime(seconds: time, preferredTimescale: 600)
+
+        // 정밀하게 seek + 완료 핸들러로 현재 시간 설정
+        player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            self?.currentTime = time
         }
     }
-    
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
+
+    // MARK: - Time Observer
+
+    private func addPeriodicTimeObserver() {
+        guard let player = player else { return }
+
+        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] time in
+            guard let self = self else { return }
+            self.currentTime = CMTimeGetSeconds(time)
+        }
     }
-} 
+
+    deinit {
+        if let observer = timeObserver {
+            player?.removeTimeObserver(observer)
+        }
+    }
+}
