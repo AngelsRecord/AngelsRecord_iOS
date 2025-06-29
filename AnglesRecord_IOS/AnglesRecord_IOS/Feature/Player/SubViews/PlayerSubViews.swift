@@ -6,84 +6,72 @@ struct MiniPlayerView: View {
     let onDelete: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(height: 3)
-                    
-                    Rectangle()
-                        .fill(Color.primary)
-                        .frame(width: geometry.size.width * (audioPlayer.currentTime / max(audioPlayer.duration, 1)), height: 3)
-                }
-            }
-            .frame(height: 3)
-
-            HStack(spacing: 20) {
-                Image(systemName: "waveform")
-                    .font(.title2)
+        HStack(spacing: 12) {
+            // 앨범 이미지
+            Image("mainimage_yet")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 50, height: 50)
+                .cornerRadius(8)
+            
+            // 제목과 아티스트
+            VStack(alignment: .leading, spacing: 2) {
+                Text(record.title)
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.primary)
-                    .symbolEffect(.variableColor.iterative, options: .repeating, isActive: audioPlayer.isPlaying)
+                    .lineLimit(1)
                 
-                Button(action: {
-                    audioPlayer.skip(seconds: -15)
-                }) {
-                    buttonLabel(systemName: "gobackward", text: "15", size: 44)
-                }
-
-                Button(action: {
-                    audioPlayer.togglePlayPause()
-                }) {
-                    ZStack {
-                        Circle()
-                            .stroke(Color.primary, lineWidth: 2)
-                            .frame(width: 56, height: 56)
-                        Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.title2)
-                    }
-                }
-
-                Button(action: {
-                    audioPlayer.skip(seconds: 15)
-                }) {
-                    buttonLabel(systemName: "goforward", text: "15", size: 44)
-                }
-
-                Spacer()
-
-                Text("\(formatTime(audioPlayer.currentTime)) / \(formatTime(audioPlayer.duration))")
-                    .font(.caption)
+                Text(record.artist)
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
-                    .monospacedDigit()
-
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.title2)
-                        .foregroundColor(.red)
-                }
+                    .lineLimit(1)
             }
-            .padding()
+            
+            Spacer()
+            
+            // 재생/일시정지 버튼
+            Button(action: {
+                audioPlayer.togglePlayPause()
+            }) {
+                Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.primary)
+                    .frame(width: 44, height: 44)
+            }
+            
+            // 다음곡 버튼
+            Button(action: {
+                // 다음곡 기능 (현재는 빈 액션)
+            }) {
+                Image(systemName: "forward.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.primary)
+                    .frame(width: 44, height: 44)
+            }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(height: 66)
         .background(
             Color(UIColor.systemBackground)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
         )
     }
+}
 
-    private func buttonLabel(systemName: String, text: String, size: CGFloat) -> some View {
-        ZStack {
-            Circle()
-                .stroke(Color.primary, lineWidth: 2)
-                .frame(width: size, height: size)
-            VStack(spacing: 0) {
-                Image(systemName: systemName).font(.system(size: 16))
-                Text(text).font(.system(size: 10))
-            }
-        }
+#Preview {
+    VStack {
+        Spacer()
+        
+        MiniPlayerView(
+            record: RecordListModel(
+                title: "Ep.1 대나무숲",
+                artist: "6월 22일",
+                duration: 205.0
+            ),
+            audioPlayer: AudioPlayerManager(),
+            onDelete: {}
+        )
     }
-
-    private func formatTime(_ time: TimeInterval) -> String {
-        String(format: "%d:%02d", Int(time) / 60, Int(time) % 60)
-    }
+    .background(Color.gray.opacity(0.1))
 }
