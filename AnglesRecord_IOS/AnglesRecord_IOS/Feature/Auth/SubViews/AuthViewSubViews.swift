@@ -33,13 +33,6 @@ struct SecureLimitedTextField: UIViewRepresentable {
             }
         }
 
-        // 붙여넣기 비활성화
-        override func responds(to aSelector: Selector!) -> Bool {
-            if aSelector == #selector(UIResponderStandardEditActions.paste(_:)) {
-                return false
-            }
-            return super.responds(to: aSelector)
-        }
     }
 
     func makeCoordinator() -> Coordinator {
