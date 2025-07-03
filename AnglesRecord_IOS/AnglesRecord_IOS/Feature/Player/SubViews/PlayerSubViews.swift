@@ -248,6 +248,7 @@ struct PlaybackSliderView: View {
     @Binding var isDragging: Bool
     var onSeek: (Double) -> Void
     @ObservedObject var audioPlayer: AudioPlayerManager
+    @State private var isDraggingSlider = false
 
     @State private var internalValue: Double = 0  // 내부 값 (UI 반영용)
     @State private var lastSeekTime = Date.distantPast
@@ -258,7 +259,7 @@ struct PlaybackSliderView: View {
                 value: $internalValue,
                 range: 0...max(duration, 1),
                 onEditingChanged: { dragging in
-                    isDragging = dragging
+                    isDraggingSlider = dragging
 
                     if !dragging {
                         lastSeekTime = Date()
@@ -268,13 +269,13 @@ struct PlaybackSliderView: View {
                         }
                     }
                 },
-                isDragging: $isDragging
+                isDragging: $isDraggingSlider
             )
             .scaleEffect(
-                CGSize(width: isDragging ? 1.03 : 1.0, height: isDragging ? 1.15 : 1.0),
+                CGSize(width: isDraggingSlider ? 1.03 : 1.0, height: isDraggingSlider ? 1.15 : 1.0),
                 anchor: .center
             )
-            .animation(.easeInOut(duration: 0.2), value: isDragging)
+            .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
             .frame(width: 335, height: 24)
             .padding(.top, 4)
 
@@ -287,6 +288,11 @@ struct PlaybackSliderView: View {
             .monospacedDigit()
             .foregroundColor(.secondary)
             .frame(width: 335)
+            .scaleEffect(
+                CGSize(width: isDraggingSlider ? 1.03 : 1.0, height: isDraggingSlider ? 1.03 : 1.0),
+                anchor: .center
+            )
+            .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
         }
         .onAppear {
             internalValue = value  // 최초 sync
