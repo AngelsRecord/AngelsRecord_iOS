@@ -118,7 +118,7 @@ struct MiniPlayerView: View {
     let onDelete: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             // 앨범 이미지
             Image("mainimage_yet")
                 .resizable()
@@ -127,15 +127,15 @@ struct MiniPlayerView: View {
                 .cornerRadius(8)
             
             // 제목과 아티스트
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(record.title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.primary)
+                    .font(Font.SFPro.Medium.s16)
+                    .foregroundColor(.mainText)
                     .lineLimit(1)
                 
                 Text(record.artist)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .font(Font.SFPro.Medium.s14)
+                    .foregroundColor(.subText)
                     .lineLimit(1)
             }
             
