@@ -270,7 +270,10 @@ struct PlaybackSliderView: View {
                 },
                 isDragging: $isDragging
             )
-            .scaleEffect(isDragging ? 1.1 : 1.0)
+            .scaleEffect(
+                CGSize(width: isDragging ? 1.03 : 1.0, height: isDragging ? 1.15 : 1.0),
+                anchor: .center
+            )
             .animation(.easeInOut(duration: 0.2), value: isDragging)
             .frame(width: 335, height: 24)
             .padding(.top, 4)
