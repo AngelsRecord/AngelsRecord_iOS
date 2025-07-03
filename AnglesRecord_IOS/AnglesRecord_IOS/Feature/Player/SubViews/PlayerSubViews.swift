@@ -4,17 +4,33 @@ import AVKit
 
 // MARK: - 커스텀 UISlider (트랙 두께 조정)
 class ThickerSlider: UISlider {
-    var trackHeight: CGFloat = 6  // 기본값
+    var trackHeight: CGFloat = 6
 
     override func trackRect(forBounds bounds: CGRect) -> CGRect {
-        let dynamicHeight = max(4, min(10, UIScreen.main.bounds.width * 0.01))  // 예: 너비의 1%, 최소 4 ~ 최대 10
         let original = super.trackRect(forBounds: bounds)
         return CGRect(
             x: original.origin.x,
-            y: original.origin.y + (original.height - dynamicHeight) / 2,
+            y: original.origin.y + (original.height - trackHeight) / 2,
             width: original.width,
-            height: dynamicHeight
+            height: trackHeight
         )
+    }
+
+    // ✅ 아무 곳에서 드래그 시작 가능
+    override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        return true  // 슬라이드 시작은 허용하되 값은 아직 변경하지 않음
+    }
+
+    // ✅ 실제 드래그 중일 때 값 업데이트
+    override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        let point = touch.location(in: self)
+        let percentage = max(0, min(1, point.x / bounds.width))
+        let delta = Float(percentage) * (maximumValue - minimumValue)
+        let newValue = minimumValue + delta
+
+        setValue(newValue, animated: false)
+        sendActions(for: .valueChanged)
+        return true
     }
 }
 
@@ -25,14 +41,14 @@ struct CustomProgressSlider: UIViewRepresentable {
     let range: ClosedRange<Double>
     var onEditingChanged: ((Bool) -> Void)? = nil
     @Binding var isDragging: Bool
-
+    
     func makeUIView(context: Context) -> ThickerSlider {
         let slider = ThickerSlider(frame: .zero)
-        slider.trackHeight = 50
+        slider.trackHeight = 6
         slider.minimumValue = Float(range.lowerBound)
         slider.maximumValue = Float(range.upperBound)
 
-        // 핵심: 거의 투명한 thumb (안보이지만 둥글게 처리됨)
+        // Thumb
         let thumbSize = CGSize(width: 16, height: 16)
         let thumb = UIGraphicsImageRenderer(size: thumbSize).image { context in
             let rect = CGRect(origin: .zero, size: thumbSize)
@@ -42,16 +58,53 @@ struct CustomProgressSlider: UIViewRepresentable {
         }
         slider.setThumbImage(thumb, for: .normal)
 
-        slider.minimumTrackTintColor = UIColor.label
-        slider.maximumTrackTintColor = UIColor.systemGray5
+        // 둥근 트랙 이미지 만들기 (width는 최소 8 이상, 가운데 stretch 가능하게)
+        let trackHeight = slider.trackHeight
+        let cornerRadius = trackHeight / 2
+        let trackWidth: CGFloat = 12  // ✅ 좌우 6px씩 모서리를 cap으로 보호
+        let capInset: CGFloat = 6
 
-        // 이벤트 연결
+        let trackSize = CGSize(width: trackWidth, height: trackHeight)
+
+        // 왼쪽 (진행된) 트랙 이미지
+        let minTrackImage = UIGraphicsImageRenderer(size: trackSize).image { _ in
+            let path = UIBezierPath(
+                roundedRect: CGRect(origin: .zero, size: trackSize),
+                cornerRadius: cornerRadius
+            )
+            UIColor.label.setFill()
+            path.fill()
+        }
+
+        // 오른쪽 (남은) 트랙 이미지
+        let maxTrackImage = UIGraphicsImageRenderer(size: trackSize).image { _ in
+            let path = UIBezierPath(
+                roundedRect: CGRect(origin: .zero, size: trackSize),
+                cornerRadius: cornerRadius
+            )
+            UIColor.systemGray5.setFill()
+            path.fill()
+        }
+
+        let capInsets = UIEdgeInsets(top: 0, left: capInset, bottom: 0, right: capInset)
+
+        slider.setMinimumTrackImage(
+            minTrackImage.resizableImage(withCapInsets: capInsets, resizingMode: .stretch),
+            for: .normal
+        )
+
+        slider.setMaximumTrackImage(
+            maxTrackImage.resizableImage(withCapInsets: capInsets, resizingMode: .stretch),
+            for: .normal
+        )
+
         slider.addTarget(context.coordinator, action: #selector(Coordinator.valueChanged), for: .valueChanged)
         slider.addTarget(context.coordinator, action: #selector(Coordinator.touchDown), for: .touchDown)
         slider.addTarget(context.coordinator, action: #selector(Coordinator.touchUp), for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
         return slider
     }
+
 
 
     func updateUIView(_ uiView: ThickerSlider, context: Context) {
@@ -201,38 +254,74 @@ struct MiniPlayerView: View {
 
 
 struct PlaybackSliderView: View {
-    @Binding var value: Double
+    @Binding var value: Double              // 외부 상태
     var duration: Double
     @Binding var isDragging: Bool
     var onSeek: (Double) -> Void
+    @ObservedObject var audioPlayer: AudioPlayerManager
+    @State private var isDraggingSlider = false
+
+    @State private var internalValue: Double = 0  // 내부 값 (UI 반영용)
+    @State private var lastSeekTime = Date.distantPast
 
     var body: some View {
         VStack(spacing: 6) {
             CustomProgressSlider(
-                value: $value,
+                value: $internalValue,
                 range: 0...max(duration, 1),
                 onEditingChanged: { dragging in
-                    isDragging = dragging
+                    isDraggingSlider = dragging
+
                     if !dragging {
-                        onSeek(value)
+                        lastSeekTime = Date()
+                        let finalValue = internalValue
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            onSeek(finalValue)
+                        }
                     }
                 },
-                isDragging: $isDragging
+                isDragging: $isDraggingSlider
             )
-            .scaleEffect(isDragging ? 1.1 : 1.0)
-            .animation(.easeInOut(duration: 0.2), value: isDragging)
-            .frame(width: 335, height: 24) // 터치 고려해 전체 높이는 넉넉히
+            .scaleEffect(
+                CGSize(width: isDraggingSlider ? 1.03 : 1.0, height: isDraggingSlider ? 1.15 : 1.0),
+                anchor: .center
+            )
+            .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
+            .frame(width: 335, height: 24)
             .padding(.top, 4)
 
             HStack {
-                Text(formatTime(value))
+                Text(formatTime(internalValue))
                 Spacer()
-                Text("-" + formatTime(duration - value))
+                Text("-" + formatTime(duration - internalValue))
             }
             .font(.footnote)
             .monospacedDigit()
             .foregroundColor(.secondary)
             .frame(width: 335)
+            .scaleEffect(
+                CGSize(width: isDraggingSlider ? 1.03 : 1.0, height: isDraggingSlider ? 1.03 : 1.0),
+                anchor: .center
+            )
+            .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
+        }
+        .onAppear {
+            internalValue = value  // 최초 sync
+        }
+        .onChange(of: value) { newValue in
+            guard !isDragging else { return }
+
+            // 최근 seek 후 0.4초 이내는 무시
+            guard Date().timeIntervalSince(lastSeekTime) > 0.4 else { return }
+
+            // 슬라이더 값을 부드럽게 반영
+            withAnimation(.linear(duration: 0.4)) {
+                if newValue >= duration - 1 {
+                    internalValue = duration
+                } else {
+                    internalValue = min(newValue, duration * 0.998)
+                }
+            }
         }
     }
 
@@ -240,6 +329,7 @@ struct PlaybackSliderView: View {
         String(format: "%d:%02d", Int(time) / 60, Int(time) % 60)
     }
 }
+
 
 struct VolumeSliderView: View {
     @Binding var volume: Float

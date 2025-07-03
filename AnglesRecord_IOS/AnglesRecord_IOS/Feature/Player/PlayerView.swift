@@ -96,7 +96,8 @@ struct PlayerView: View {
                         isDragging: $isDragging,
                         onSeek: { newValue in
                             audioPlayer.seek(to: newValue)
-                        }
+                        },
+                        audioPlayer: audioPlayer // 👈 추가
                     )
                     .onReceive(audioPlayer.$currentTime) { newValue in
                         if !isDragging {
