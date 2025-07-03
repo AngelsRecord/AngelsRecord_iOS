@@ -1,5 +1,5 @@
 import SwiftUI
-import FirebaseCoreInternal
+import FirebaseStorage
 import SwiftData
 import AVFoundation
 
@@ -19,28 +19,14 @@ struct MainView: View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 VStack(spacing: 0) {
-                    // 로딩 스피너 (새로고침 시 맨 위에)
                     if isRefreshing {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .scaleEffect(0.8)
-                            Spacer()
-                        }
-                        .padding(.top, 10)
-                        .padding(.bottom, 10)
+                        ProgressView().padding(.vertical, 12)
                     }
-                    
-                    // 팟캐스트 메인 섹션
+
                     podcastMainSection
-                    
-                    // 구분선
-                    Rectangle()
-                        .fill(Color("subText").opacity(0.2))
-                        .frame(height: 1)
-                        .padding(.horizontal, 20)
-                    
-                    // 에피소드 목록 또는 로딩 상태
+
+                    Divider().padding(.horizontal)
+
                     if isLoading {
                         loadingSection
                     } else {
@@ -50,10 +36,12 @@ struct MainView: View {
                 .padding(.bottom, selectedRecord != nil ? 100 : 20)
             }
             .refreshable {
-                await refreshData()
+                await MainActor.run {
+                    recordListViewModel.fetchAndSyncEpisodes(context: modelContext)
+                    isRefreshing = false
+                }
             }
-            
-            // 미니플레이어 (재생 중일 때만 표시)
+
             if let record = selectedRecord {
                 MiniPlayerView(
                     record: record,
@@ -62,9 +50,7 @@ struct MainView: View {
                         deleteRecord(record)
                     }
                 )
-                .onTapGesture {
-                    showingPlayerView = true
-                }
+                .onTapGesture { showingPlayerView = true }
                 .fullScreenCover(isPresented: $showingPlayerView) {
                     if let selected = selectedRecord {
                         PlayerView(record: selected, audioPlayer: audioPlayer) {
@@ -79,85 +65,62 @@ struct MainView: View {
             isPresented: $showingFilePicker,
             allowedContentTypes: [.audio],
             allowsMultipleSelection: false
-        ) { result in
-            handleFileImport(result)
-        }
+        ) { handleFileImport($0) }
         .onAppear {
             loadInitialData()
         }
     }
-    
-    // MARK: - 팟캐스트 메인 섹션
+
+    // MARK: - 섹션 구성
+
     private var podcastMainSection: some View {
         VStack(spacing: 0) {
-            // 팟캐스트 커버 이미지
             Image("mainimage_yet")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 200, height: 200)
                 .cornerRadius(16)
                 .padding(.top, 20)
-            
-            // 제목
+
             Text("전지적 씨팝 시점: 전팝시")
                 .font(Font.SFPro.SemiBold.s16)
                 .foregroundColor(Color("mainText"))
-                .frame(maxWidth: .infinity, alignment: .center)
-                .opacity(0.9)
                 .padding(.top, 16)
-            
-            // 부제목
+
             Text("엔젤스")
                 .font(Font.SFPro.Regular.s14)
-                .multilineTextAlignment(.center)
                 .foregroundColor(Color("subText"))
-                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 6)
-            
-            // 최신 에피소드 재생 버튼
-            Button(action: {
-                playLatestEpisode()
-            }) {
-                HStack(alignment: .center, spacing: 8) {
+
+            Button(action: playLatestEpisode) {
+                HStack(spacing: 8) {
                     Image(systemName: "play.fill")
-                        .font(Font.custom("SF Pro", size: 17))
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(Color("mainText"))
-                    // Button/Semi16
                     Text("최신 에피소드")
-                        .font(Font.SFPro.SemiBold.s16)
-                        .foregroundColor(Color("mainText"))
                 }
-                .padding(.horizontal, 74.5)
+                .font(Font.SFPro.SemiBold.s16)
+                .foregroundColor(Color("mainText"))
                 .padding(.vertical, 14)
-                .frame(alignment: .center)
+                .padding(.horizontal, 74.5)
                 .background(Color("iconBack"))
                 .cornerRadius(12)
             }
-          
             .padding(.top, 16)
             .padding(.bottom, 30)
         }
     }
-    
-    // MARK: - 로딩 섹션
+
     private var loadingSection: some View {
         VStack(spacing: 20) {
-            ProgressView()
-                .scaleEffect(1.2)
-                .padding(.top, 40)
-            
+            ProgressView().scaleEffect(1.2).padding(.top, 40)
             Text("데이터를 불러오는 중...")
                 .font(Font.SFPro.Regular.s14)
                 .foregroundColor(Color("subText"))
-            
             Spacer()
         }
         .frame(maxWidth: .infinity)
         .frame(minHeight: 300)
     }
-    
-    // MARK: - 에피소드 목록 컨텐츠
+
     private var episodeListContent: some View {
         LazyVStack(spacing: 0) {
             ForEach(Array(recordListViewModel.episodes.enumerated()), id: \.element.id) { index, episode in
@@ -165,41 +128,30 @@ struct MainView: View {
                     episodeRow(for: episode)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 16)
-                    
-                    // 에피소드 사이 구분선 (마지막 아이템 제외)
+
                     if index < recordListViewModel.episodes.count - 1 {
-                        Rectangle()
-                            .fill(Color("subText").opacity(0.1))
-                            .frame(height: 1)
-                            .padding(.horizontal, 20)
+                        Divider().padding(.horizontal, 20)
                     }
                 }
             }
         }
     }
-    
-    // MARK: - 에피소드 행
-    private func episodeRow(for episode: Episode) -> some View {
+
+    private func episodeRow(for episode: EpisodeModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            // 날짜
             Text(formatted(date: episode.uploadedAt))
                 .font(Font.SFPro.SemiBold.s12)
                 .foregroundColor(Color("subText"))
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            
-            // 제목
+
             Text(episode.title)
                 .font(Font.SFPro.SemiBold.s16)
                 .foregroundColor(Color("mainText"))
-                .frame(width: 345, alignment: .topLeading)
-                .opacity(0.9)
+                .frame(width: 345, alignment: .leading)
                 .lineLimit(2)
-            
-            // 설명
-            Text(episode.description)
+
+            Text(episode.desc)
                 .font(Font.SFPro.Regular.s14)
                 .foregroundColor(Color("subText"))
-                .frame(maxWidth: .infinity, alignment: .topLeading)
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -209,52 +161,40 @@ struct MainView: View {
         }
     }
 
-    // MARK: - 헬퍼 함수들
+    // MARK: - 헬퍼
+
     private func formatted(date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "M월 d일"
         formatter.locale = Locale(identifier: "ko_KR")
         return formatter.string(from: date)
     }
-    
+
     private func loadInitialData() {
         isLoading = true
-        
-        recordListViewModel.fetchEpisodes()
-        
-        // 로딩 시뮬레이션 (실제로는 fetchEpisodes 완료 후 isLoading을 false로)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            withAnimation(.easeInOut(duration: 0.5)) {
-                isLoading = false
-            }
+        recordListViewModel.loadLocalEpisodes(context: modelContext)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            withAnimation { isLoading = false }
         }
     }
-    
-    private func refreshData() async {
-        isRefreshing = true
-        
-        // 새로고침 시뮬레이션
-        try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5초
-        
-        await MainActor.run {
-            recordListViewModel.fetchEpisodes()
-            withAnimation(.easeInOut(duration: 0.3)) {
-                isRefreshing = false
-            }
-        }
-    }
-    
+
     private func playLatestEpisode() {
         guard let latestEpisode = recordListViewModel.episodes.first else { return }
         playEpisode(latestEpisode)
     }
-    
 
-    private func playEpisode(_ episode: Episode) {
+    private func playEpisode(_ episode: EpisodeModel) {
         let localURL = recordListViewModel.getLocalFileURL(for: episode.fileName)
         let asset = AVURLAsset(url: localURL)
         let duration = CMTimeGetSeconds(asset.duration)
-        let record = RecordListModel(title: episode.title, artist: episode.description, duration: duration, fileURL: localURL)
+
+        let record = RecordListModel(
+            title: episode.title,
+            artist: episode.desc,
+            duration: duration,
+            fileURL: localURL
+        )
 
         withAnimation(.spring()) {
             if selectedRecord?.id == record.id {
@@ -267,12 +207,10 @@ struct MainView: View {
         }
     }
 
-    // MARK: - 기존 함수들 (수정 없음)
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-
             let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let destinationURL = documentsPath.appendingPathComponent(url.lastPathComponent)
 
@@ -318,8 +256,4 @@ struct MainView: View {
         modelContext.delete(record)
         try? modelContext.save()
     }
-}
-
-#Preview {
-    MainView()
 }
