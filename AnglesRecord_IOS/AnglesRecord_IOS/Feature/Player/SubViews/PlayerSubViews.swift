@@ -243,23 +243,26 @@ struct MiniPlayerView: View {
 
 
 struct PlaybackSliderView: View {
-    @Binding var value: Double
+    @Binding var value: Double              // 외부 상태
     var duration: Double
     @Binding var isDragging: Bool
     var onSeek: (Double) -> Void
     @ObservedObject var audioPlayer: AudioPlayerManager
+
+    @State private var internalValue: Double = 0  // 내부 값 (UI 반영용)
     @State private var lastSeekTime = Date.distantPast
 
     var body: some View {
         VStack(spacing: 6) {
             CustomProgressSlider(
-                value: $value,
+                value: $internalValue,
                 range: 0...max(duration, 1),
                 onEditingChanged: { dragging in
                     isDragging = dragging
+
                     if !dragging {
                         lastSeekTime = Date()
-                        let finalValue = value
+                        let finalValue = internalValue
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                             onSeek(finalValue)
                         }
@@ -267,25 +270,38 @@ struct PlaybackSliderView: View {
                 },
                 isDragging: $isDragging
             )
-            .scaleEffect(
-                CGSize(width: isDragging ? 1.03 : 1.0, height: isDragging ? 1.15 : 1.0),
-                anchor: .center
-            )
-            .animation(.easeInOut(duration: 0.25), value: isDragging)
+            .scaleEffect(isDragging ? 1.1 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: isDragging)
             .frame(width: 335, height: 24)
             .padding(.top, 4)
 
             HStack {
-                Text(formatTime(value))
+                Text(formatTime(internalValue))
                 Spacer()
-                Text("-" + formatTime(duration - value))
+                Text("-" + formatTime(duration - internalValue))
             }
             .font(.footnote)
             .monospacedDigit()
             .foregroundColor(.secondary)
             .frame(width: 335)
-            .scaleEffect(x: isDragging ? 1.03 : 1.0)
-            .animation(.easeInOut(duration: 0.25), value: isDragging)
+        }
+        .onAppear {
+            internalValue = value  // 최초 sync
+        }
+        .onChange(of: value) { newValue in
+            guard !isDragging else { return }
+
+            // 최근 seek 후 0.4초 이내는 무시
+            guard Date().timeIntervalSince(lastSeekTime) > 0.4 else { return }
+
+            // 슬라이더 값을 부드럽게 반영
+            withAnimation(.linear(duration: 0.4)) {
+                if newValue >= duration - 1 {
+                    internalValue = duration
+                } else {
+                    internalValue = min(newValue, duration * 0.998)
+                }
+            }
         }
     }
 
@@ -293,6 +309,7 @@ struct PlaybackSliderView: View {
         String(format: "%d:%02d", Int(time) / 60, Int(time) % 60)
     }
 }
+
 
 struct VolumeSliderView: View {
     @Binding var volume: Float
