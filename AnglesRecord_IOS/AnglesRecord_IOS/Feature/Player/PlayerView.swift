@@ -68,8 +68,14 @@ struct PlayerView: View {
 
                             Spacer()
 
-                            Button {
-                                // Options action
+                            
+                            //MARK: 배속 버튼
+                            Menu {
+                                Button("2x") { audioPlayer.setRate(2.0) }
+                                Button("1.75x") { audioPlayer.setRate(1.75) }
+                                Button("1.5x") { audioPlayer.setRate(1.5) }
+                                Button("1x") { audioPlayer.setRate(1.0) }
+                                Button("0.75x") { audioPlayer.setRate(0.75) }
                             } label: {
                                 Image(systemName: "ellipsis")
                                     .padding(10)
