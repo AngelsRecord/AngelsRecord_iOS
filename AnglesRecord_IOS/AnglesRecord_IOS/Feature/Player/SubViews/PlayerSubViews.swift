@@ -4,7 +4,7 @@ import AVKit
 
 // MARK: - 커스텀 UISlider (트랙 두께 조정)
 class ThickerSlider: UISlider {
-    var trackHeight: CGFloat = 6  // 기본값
+    var trackHeight: CGFloat = 6
 
     override func trackRect(forBounds bounds: CGRect) -> CGRect {
         let original = super.trackRect(forBounds: bounds)
@@ -15,6 +15,23 @@ class ThickerSlider: UISlider {
             height: trackHeight
         )
     }
+
+    // ✅ 아무 곳에서 드래그 시작 가능
+    override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        return true  // 슬라이드 시작은 허용하되 값은 아직 변경하지 않음
+    }
+
+    // ✅ 실제 드래그 중일 때 값 업데이트
+    override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        let point = touch.location(in: self)
+        let percentage = max(0, min(1, point.x / bounds.width))
+        let delta = Float(percentage) * (maximumValue - minimumValue)
+        let newValue = minimumValue + delta
+
+        setValue(newValue, animated: false)
+        sendActions(for: .valueChanged)
+        return true
+    }
 }
 
 
@@ -24,14 +41,14 @@ struct CustomProgressSlider: UIViewRepresentable {
     let range: ClosedRange<Double>
     var onEditingChanged: ((Bool) -> Void)? = nil
     @Binding var isDragging: Bool
-
+    
     func makeUIView(context: Context) -> ThickerSlider {
         let slider = ThickerSlider(frame: .zero)
         slider.trackHeight = 6
         slider.minimumValue = Float(range.lowerBound)
         slider.maximumValue = Float(range.upperBound)
 
-        // 핵심: 거의 투명한 thumb (안보이지만 둥글게 처리됨)
+        // Thumb
         let thumbSize = CGSize(width: 16, height: 16)
         let thumb = UIGraphicsImageRenderer(size: thumbSize).image { context in
             let rect = CGRect(origin: .zero, size: thumbSize)
@@ -41,16 +58,58 @@ struct CustomProgressSlider: UIViewRepresentable {
         }
         slider.setThumbImage(thumb, for: .normal)
 
-        slider.minimumTrackTintColor = UIColor.label
-        slider.maximumTrackTintColor = UIColor.systemGray5
+        // 둥근 트랙 이미지 만들기 (width는 최소 8 이상, 가운데 stretch 가능하게)
+        let trackHeight = slider.trackHeight
+        let cornerRadius = trackHeight / 2
+        let trackWidth: CGFloat = 12  // ✅ 좌우 6px씩 모서리를 cap으로 보호
+        let capInset: CGFloat = 6
 
-        // 이벤트 연결
+        let trackSize = CGSize(width: trackWidth, height: trackHeight)
+
+        // 왼쪽 (진행된) 트랙 이미지
+        let minTrackImage = UIGraphicsImageRenderer(size: trackSize).image { _ in
+            let path = UIBezierPath(
+                roundedRect: CGRect(origin: .zero, size: trackSize),
+                cornerRadius: cornerRadius
+            )
+            UIColor.label.setFill()
+            path.fill()
+        }
+
+        // 오른쪽 (남은) 트랙 이미지
+        let maxTrackImage = UIGraphicsImageRenderer(size: trackSize).image { _ in
+            let path = UIBezierPath(
+                roundedRect: CGRect(origin: .zero, size: trackSize),
+                cornerRadius: cornerRadius
+            )
+            UIColor.systemGray5.setFill()
+            path.fill()
+        }
+
+        // ✅ 핵심: 끝단 유지하면서 stretch 하기 위해 cap insets 부여
+        let capInsets = UIEdgeInsets(top: 0, left: capInset, bottom: 0, right: capInset)
+
+        slider.setMinimumTrackImage(
+            minTrackImage.resizableImage(withCapInsets: capInsets, resizingMode: .stretch),
+            for: .normal
+        )
+
+        slider.setMaximumTrackImage(
+            maxTrackImage.resizableImage(withCapInsets: capInsets, resizingMode: .stretch),
+            for: .normal
+        )
+
+        // tintColor는 쓰지 마!
+        // slider.minimumTrackTintColor = nil
+        // slider.maximumTrackTintColor = nil
+
         slider.addTarget(context.coordinator, action: #selector(Coordinator.valueChanged), for: .valueChanged)
         slider.addTarget(context.coordinator, action: #selector(Coordinator.touchDown), for: .touchDown)
         slider.addTarget(context.coordinator, action: #selector(Coordinator.touchUp), for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
         return slider
     }
+
 
 
     func updateUIView(_ uiView: ThickerSlider, context: Context) {
@@ -193,6 +252,8 @@ struct PlaybackSliderView: View {
     var duration: Double
     @Binding var isDragging: Bool
     var onSeek: (Double) -> Void
+    @ObservedObject var audioPlayer: AudioPlayerManager
+    @State private var lastSeekTime = Date.distantPast
 
     var body: some View {
         VStack(spacing: 6) {
@@ -202,8 +263,13 @@ struct PlaybackSliderView: View {
                 onEditingChanged: { dragging in
                     isDragging = dragging
                     if !dragging {
-                        onSeek(value)
-                    }
+                                lastSeekTime = Date()
+
+                                let finalValue = value
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                    onSeek(finalValue)
+                                }
+                            }
                 },
                 isDragging: $isDragging
             )
@@ -211,6 +277,21 @@ struct PlaybackSliderView: View {
             .animation(.easeInOut(duration: 0.2), value: isDragging)
             .frame(width: 335, height: 24) // 터치 고려해 전체 높이는 넉넉히
             .padding(.top, 4)
+            .onReceive(audioPlayer.$currentTime) { newValue in
+                guard !isDragging else { return }
+
+                // ✅ 마지막 시크 직후의 값 무시 (예: 0.4초 이내)
+                guard Date().timeIntervalSince(lastSeekTime) > 0.4 else { return }
+
+                withAnimation(.linear(duration: 0.4)) {
+                    if newValue >= duration - 1 {
+                        value = duration
+                    } else {
+                        value = min(newValue, duration * 0.998)
+                    }
+                }
+            }
+
 
             HStack {
                 Text(formatTime(value))
