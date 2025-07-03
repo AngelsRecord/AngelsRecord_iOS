@@ -8,13 +8,18 @@ struct AuthView: View {
     @State private var errorMessage: String?
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("접근 코드 입력")
+        VStack {
+            Text("인증 코드를\n입력해주세요.")
                 .font(.title)
+                .bold()
+                .padding(.trailing, 220)
+                .padding(.top, 73)
             
             SecureLimitedTextField(text: $code)
-                .frame(height: 44)
-                .padding()
+                .frame(height: 64)
+                .padding(.leading, 24)
+                .padding(.top, 54)
+
 
             
             if let errorMessage = errorMessage {
@@ -22,15 +27,20 @@ struct AuthView: View {
                     .foregroundColor(.red)
             }
             
-            Button("확인") {
+            Spacer()
+            
+            Button("시작하기") {
                 verifyCode(code)
             }
-            .padding()
+            .frame(width:353, height: 64)
+            .background(.subText)
+            .foregroundColor(.buttonText)
+            .cornerRadius(8)
         }
-        .padding()
         .fullScreenCover(isPresented: $isAuthenticated) {
             MainView()
         }
+        Spacer()
     }
     
     func verifyCode(_ input: String) {
@@ -39,7 +49,7 @@ struct AuthView: View {
         functions.httpsCallable("verifyAccessCode").call(["code": input]) { result, error in
             if let error = error {
                 print("❌ 인증 실패: \(error.localizedDescription)")
-                errorMessage = "잘못된 코드입니다."
+//                errorMessage = "잘못된 코드입니다."
             } else if let data = result?.data as? [String: Any],
                       let channelId = data["channelId"] as? String {
                 print("✅ 인증 성공: \(channelId)")
