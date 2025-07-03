@@ -7,13 +7,12 @@ class ThickerSlider: UISlider {
     var trackHeight: CGFloat = 6  // 기본값
 
     override func trackRect(forBounds bounds: CGRect) -> CGRect {
-        let dynamicHeight = max(4, min(10, UIScreen.main.bounds.width * 0.01))  // 예: 너비의 1%, 최소 4 ~ 최대 10
         let original = super.trackRect(forBounds: bounds)
         return CGRect(
             x: original.origin.x,
-            y: original.origin.y + (original.height - dynamicHeight) / 2,
+            y: original.origin.y + (original.height - trackHeight) / 2,
             width: original.width,
-            height: dynamicHeight
+            height: trackHeight
         )
     }
 }
@@ -28,7 +27,7 @@ struct CustomProgressSlider: UIViewRepresentable {
 
     func makeUIView(context: Context) -> ThickerSlider {
         let slider = ThickerSlider(frame: .zero)
-        slider.trackHeight = 50
+        slider.trackHeight = 6
         slider.minimumValue = Float(range.lowerBound)
         slider.maximumValue = Float(range.upperBound)
 
