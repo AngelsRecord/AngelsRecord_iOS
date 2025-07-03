@@ -18,6 +18,7 @@ class AudioPlayerManager: ObservableObject {
 
     func play(_ record: RecordListModel) {
         currentRecord = record
+        currentTime = 0
         let playerItem = AVPlayerItem(url: record.fileURL!)
         player = AVPlayer(playerItem: playerItem)
         addPeriodicTimeObserver()
