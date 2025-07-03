@@ -86,7 +86,6 @@ struct CustomProgressSlider: UIViewRepresentable {
             path.fill()
         }
 
-        // ✅ 핵심: 끝단 유지하면서 stretch 하기 위해 cap insets 부여
         let capInsets = UIEdgeInsets(top: 0, left: capInset, bottom: 0, right: capInset)
 
         slider.setMinimumTrackImage(
@@ -98,10 +97,6 @@ struct CustomProgressSlider: UIViewRepresentable {
             maxTrackImage.resizableImage(withCapInsets: capInsets, resizingMode: .stretch),
             for: .normal
         )
-
-        // tintColor는 쓰지 마!
-        // slider.minimumTrackTintColor = nil
-        // slider.maximumTrackTintColor = nil
 
         slider.addTarget(context.coordinator, action: #selector(Coordinator.valueChanged), for: .valueChanged)
         slider.addTarget(context.coordinator, action: #selector(Coordinator.touchDown), for: .touchDown)
@@ -263,35 +258,22 @@ struct PlaybackSliderView: View {
                 onEditingChanged: { dragging in
                     isDragging = dragging
                     if !dragging {
-                                lastSeekTime = Date()
-
-                                let finalValue = value
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                    onSeek(finalValue)
-                                }
-                            }
+                        lastSeekTime = Date()
+                        let finalValue = value
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            onSeek(finalValue)
+                        }
+                    }
                 },
                 isDragging: $isDragging
             )
-            .scaleEffect(isDragging ? 1.1 : 1.0)
-            .animation(.easeInOut(duration: 0.2), value: isDragging)
-            .frame(width: 335, height: 24) // 터치 고려해 전체 높이는 넉넉히
+            .scaleEffect(
+                CGSize(width: isDragging ? 1.03 : 1.0, height: isDragging ? 1.15 : 1.0),
+                anchor: .center
+            )
+            .animation(.easeInOut(duration: 0.25), value: isDragging)
+            .frame(width: 335, height: 24)
             .padding(.top, 4)
-            .onReceive(audioPlayer.$currentTime) { newValue in
-                guard !isDragging else { return }
-
-                // ✅ 마지막 시크 직후의 값 무시 (예: 0.4초 이내)
-                guard Date().timeIntervalSince(lastSeekTime) > 0.4 else { return }
-
-                withAnimation(.linear(duration: 0.4)) {
-                    if newValue >= duration - 1 {
-                        value = duration
-                    } else {
-                        value = min(newValue, duration * 0.998)
-                    }
-                }
-            }
-
 
             HStack {
                 Text(formatTime(value))
@@ -302,6 +284,8 @@ struct PlaybackSliderView: View {
             .monospacedDigit()
             .foregroundColor(.secondary)
             .frame(width: 335)
+            .scaleEffect(x: isDragging ? 1.03 : 1.0)
+            .animation(.easeInOut(duration: 0.25), value: isDragging)
         }
     }
 
