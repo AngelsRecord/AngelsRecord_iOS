@@ -123,8 +123,8 @@ struct MiniPlayerView: View {
             Image("mainimage_yet")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 50, height: 50)
-                .cornerRadius(8)
+                .frame(width: 44, height: 44)
+                .cornerRadius(4)
             
             // 제목과 아티스트
             VStack(alignment: .leading, spacing: 4) {
@@ -133,7 +133,7 @@ struct MiniPlayerView: View {
                     .foregroundColor(.mainText)
                     .lineLimit(1)
                 
-                Text(record.artist)
+                Text(formattedDate(record.addedDate))
                     .font(Font.SFPro.Medium.s14)
                     .foregroundColor(.subText)
                     .lineLimit(1)
@@ -161,13 +161,24 @@ struct MiniPlayerView: View {
                     .frame(width: 44, height: 44)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .frame(height: 66)
+        .offset(y: -10)
+        .padding(.horizontal, 18)
+        .padding(.top, 20)
+        .padding(.bottom, 16)
+        .frame(height: 90)
         .background(
             Color(UIColor.systemBackground)
+                .cornerRadius(12)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
         )
+        .padding(.bottom, -32)
+    }
+    
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M월 d일"
+        formatter.locale = Locale(identifier: "ko_KR")
+        return formatter.string(from: date)
     }
 }
 

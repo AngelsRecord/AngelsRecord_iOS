@@ -80,12 +80,12 @@ struct MainView: View {
                 .scaledToFit()
                 .frame(width: 200, height: 200)
                 .cornerRadius(16)
-                .padding(.top, 20)
+                .padding(.top, 41)
 
             Text("전지적 씨팝 시점: 전팝시")
                 .font(Font.SFPro.SemiBold.s16)
                 .foregroundColor(Color("mainText"))
-                .padding(.top, 16)
+                .padding(.top, 20)
 
             Text("엔젤스")
                 .font(Font.SFPro.Regular.s14)
@@ -256,4 +256,8 @@ struct MainView: View {
         modelContext.delete(record)
         try? modelContext.save()
     }
+}
+
+#Preview {
+    MainView()
 }
