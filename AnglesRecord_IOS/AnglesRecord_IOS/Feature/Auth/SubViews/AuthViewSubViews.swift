@@ -45,12 +45,30 @@ struct SecureLimitedTextField: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         return Coordinator(self)
     }
+    
+    class BottomPaddedTextField: UITextField {
+        override func textRect(forBounds bounds: CGRect) -> CGRect {
+            return bounds.inset(by: UIEdgeInsets(top: 0, left: 0, bottom: 28, right: 0))
+        }
+
+        override func editingRect(forBounds bounds: CGRect) -> CGRect {
+            return bounds.inset(by: UIEdgeInsets(top: 0, left: 0, bottom: 28, right: 0))
+        }
+
+        override func placeholderRect(forBounds bounds: CGRect) -> CGRect {
+            return bounds.inset(by: UIEdgeInsets(top: 0, left: 0, bottom: 28, right: 0))
+        }
+    }
 
     func makeUIView(context: Context) -> UITextField {
-        let textField = UITextField()
+        let textField = BottomPaddedTextField()
         textField.delegate = context.coordinator
-        textField.placeholder = "접근 코드 (최대 10자)"
-        textField.borderStyle = .roundedRect
+        textField.placeholder = "인증 코드 입력"
+        textField.borderStyle = .none
+        let bottomLine = CALayer()
+        bottomLine.frame = CGRect(x: 0.0, y: 43.0, width: UIScreen.main.bounds.width - 60, height: 1.0)
+        bottomLine.backgroundColor = UIColor(named: "subText")?.cgColor
+        textField.layer.addSublayer(bottomLine)
         textField.keyboardType = .asciiCapable
         textField.autocorrectionType = .no
         return textField
