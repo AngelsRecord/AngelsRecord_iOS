@@ -14,7 +14,7 @@ struct MainView: View {
     @State private var showingPlayerView = false
     @State private var isLoading = false
     @State private var isRefreshing = false
-
+    
     var body: some View {
         ZStack(alignment: .bottom) {
             ScrollView {
@@ -95,7 +95,7 @@ struct MainView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 200, height: 200)
-                .cornerRadius(16)
+                .cornerRadius(8)
                 .padding(.top, 20)
             
             // 제목
@@ -104,7 +104,7 @@ struct MainView: View {
                 .foregroundColor(Color("mainText"))
                 .frame(maxWidth: .infinity, alignment: .center)
                 .opacity(0.9)
-                .padding(.top, 16)
+                .padding(.top, 20)
             
             // 부제목
             Text("엔젤스")
@@ -134,9 +134,9 @@ struct MainView: View {
                 .background(Color("iconBack"))
                 .cornerRadius(12)
             }
-          
+            
             .padding(.top, 16)
-            .padding(.bottom, 30)
+            .padding(.bottom, 20)
         }
     }
     
@@ -159,7 +159,7 @@ struct MainView: View {
     
     // MARK: - 에피소드 목록 컨텐츠
     private var episodeListContent: some View {
-        LazyVStack(spacing: 0) {
+        LazyVStack(spacing: 32) {
             ForEach(Array(recordListViewModel.episodes.enumerated()), id: \.element.id) { index, episode in
                 VStack(spacing: 0) {
                     episodeRow(for: episode)
@@ -208,7 +208,7 @@ struct MainView: View {
             playEpisode(episode)
         }
     }
-
+    
     // MARK: - 헬퍼 함수들
     private func formatted(date: Date) -> String {
         let formatter = DateFormatter()
@@ -249,13 +249,13 @@ struct MainView: View {
         playEpisode(latestEpisode)
     }
     
-
+    
     private func playEpisode(_ episode: Episode) {
         let localURL = recordListViewModel.getLocalFileURL(for: episode.fileName)
         let asset = AVURLAsset(url: localURL)
         let duration = CMTimeGetSeconds(asset.duration)
-        let record = RecordListModel(title: episode.title, artist: episode.description, duration: duration, fileURL: localURL)
-
+        let record = RecordListModel(title: episode.title, artist: formatted(date: episode.uploadedAt), duration: duration, fileURL: localURL)
+        
         withAnimation(.spring()) {
             if selectedRecord?.id == record.id {
                 selectedRecord = nil
@@ -266,55 +266,55 @@ struct MainView: View {
             }
         }
     }
-
+    
     // MARK: - 기존 함수들 (수정 없음)
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-
+            
             let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let destinationURL = documentsPath.appendingPathComponent(url.lastPathComponent)
-
+            
             do {
                 if FileManager.default.fileExists(atPath: destinationURL.path) {
                     try FileManager.default.removeItem(at: destinationURL)
                 }
                 try FileManager.default.copyItem(at: url, to: destinationURL)
-
+                
                 let asset = AVURLAsset(url: destinationURL)
                 let duration = CMTimeGetSeconds(asset.duration)
-
+                
                 let newRecord = RecordListModel(
                     title: url.deletingPathExtension().lastPathComponent,
                     artist: "Unknown Artist",
                     duration: duration,
                     fileURL: destinationURL
                 )
-
+                
                 modelContext.insert(newRecord)
                 try? modelContext.save()
-
+                
             } catch {
                 print("Error importing file: \(error)")
             }
-
+            
         case .failure(let error):
             print("File import failed: \(error)")
         }
     }
-
+    
     private func deleteRecord(_ record: RecordListModel) {
         if audioPlayer.currentRecord?.id == record.id {
             audioPlayer.stop()
         }
-
+        
         selectedRecord = nil
-
+        
         if let fileURL = record.fileURL {
             try? FileManager.default.removeItem(at: fileURL)
         }
-
+        
         modelContext.delete(record)
         try? modelContext.save()
     }
