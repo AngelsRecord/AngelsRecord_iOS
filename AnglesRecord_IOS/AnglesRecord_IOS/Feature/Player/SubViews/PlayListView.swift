@@ -2,7 +2,7 @@
 //  PlayListView.swift
 //  AnglesRecord_IOS
 //
-//  Created by Hwnag Seyeon on 7/4/25.
+// 
 //
 
 import SwiftUI
