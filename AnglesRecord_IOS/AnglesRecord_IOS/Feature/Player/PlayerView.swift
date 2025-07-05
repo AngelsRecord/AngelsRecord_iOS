@@ -1,6 +1,6 @@
-import SwiftUI
 import AVFoundation
 import MediaPlayer
+import SwiftUI
 
 struct PlayerView: View {
     public let record: RecordListModel
@@ -14,6 +14,9 @@ struct PlayerView: View {
     @State private var animatedVolume: Float = AVAudioSession.sharedInstance().outputVolume
     @State private var dragOffset: CGFloat = 0
     @State private var volumeUpdateTimer: Timer?
+
+    @State private var isExpanded = true
+    @State private var showPlaylist = false
 
     private var volumeObserver = SystemVolumeObserver()
 
@@ -52,14 +55,20 @@ struct PlayerView: View {
                             .foregroundColor(.subText)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                        HStack(alignment: .firstTextBaseline) {
+                        HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(record.title)
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.leading)
-                                    .foregroundColor(.mainText)
+                                // MARK: - Title
+
+                                MarqueeText(
+                                    text: record.title,
+                                    font: UIFont.SFPro.SemiBold.s16,
+                                    leftFade: 16,
+                                    rightFade: 16,
+                                    startDelay: 3.0,
+                                    alignment: .leading
+                                )
+                                .makeCompact()
+                                .foregroundColor(.mainText)
 
                                 Text("엔젤스")
                                     .font(.subheadline)
@@ -68,8 +77,8 @@ struct PlayerView: View {
 
                             Spacer()
 
-                            
-                            //MARK: 배속 버튼
+                            // MARK: - 배속 버튼
+
                             Menu {
                                 Button("2x") { audioPlayer.setRate(2.0) }
                                 Button("1.75x") { audioPlayer.setRate(1.75) }
@@ -146,9 +155,28 @@ struct PlayerView: View {
                             .frame(width: 24, height: 24)
                             .foregroundColor(.mainText)
 
-                        Image(systemName: "list.bullet")
-                            .font(.title3)
-                            .foregroundColor(.mainText)
+                        // MARK: - PlayListView
+                        Button(action: {
+                            if isExpanded {
+                                withAnimation(.spring()) {
+                                    isExpanded = false
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                    withAnimation(.spring()) {
+                                        showPlaylist = true
+                                    }
+                                }
+                            } else {
+                                withAnimation(.spring()) {
+                                    showPlaylist = false
+                                    isExpanded = true
+                                }
+                            }
+                        }) {
+                            Image(systemName: "list.bullet")
+                                .font(.title3)
+                                .foregroundColor(.mainText)
+                        }
                     }
                     .scaleEffect(isDragging ? 1.0125 : 1.0)
                     .animation(.easeInOut(duration: 0.2), value: isDragging)
@@ -247,5 +275,6 @@ struct HiddenSystemVolumeView: UIViewRepresentable {
         view.alpha = 0.0001
         return view
     }
+
     func updateUIView(_ uiView: MPVolumeView, context: Context) {}
 }
