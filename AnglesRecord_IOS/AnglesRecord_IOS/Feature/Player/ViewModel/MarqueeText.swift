@@ -5,6 +5,22 @@
 //
 //
 
+/*
+ 사용 방법
+ 
+ MarqueeText(
+     text: "긴 텍스트 예시",                    // 스크롤될 텍스트 내용
+     font: UIFont.SFPro.SemiBold.s16,           // 사용할 폰트 ex)UIFont.SFPro.Regular.s14  (UIFont 확장 사용)
+     leftFade: 16,                              // 왼쪽 페이드 영역 너비 (부드러운 사라짐 효과)
+     rightFade: 16,                             // 오른쪽 페이드 영역 너비 (자연스러운 등장 효과)
+     startDelay: 1.0,                           // 뷰 등장 후 애니메이션 시작까지 대기 시간 (초)
+     alignment: .leading                        // 정렬 방식: 왼쪽 정렬 - 텍스트가 넘치지 않을 때 사용됨
+ )
+ .makeCompact()                                 // 텍스트 길이에 맞춰 뷰 너비를 최소화 (UI 흐름에 맞춰서 작게 붙이고 싶을 때 사용)
+ .frame(height: 24)                             // 텍스트 영역의 세로 높이 고정 (폰트 크기에 따라 적절히 조정)
+ 
+ */
+
 import SwiftUI
 
 public struct MarqueeText: View {
