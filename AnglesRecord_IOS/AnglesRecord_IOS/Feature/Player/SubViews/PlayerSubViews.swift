@@ -194,6 +194,7 @@ struct PlaybackSliderView: View {
     var duration: Double
     @Binding var isDragging: Bool
     var onSeek: (Double) -> Void
+    @Binding var displayedTime: Double
 
     var body: some View {
         VStack(spacing: 6) {
@@ -214,9 +215,9 @@ struct PlaybackSliderView: View {
             .padding(.top, 4)
 
             HStack {
-                Text(formatTime(value))
+                Text(formatTime(displayedTime))
                 Spacer()
-                Text("-" + formatTime(duration - value))
+                Text("-" + formatTime(duration - displayedTime))
             }
             .font(.footnote)
             .monospacedDigit()

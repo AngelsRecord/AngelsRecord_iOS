@@ -10,6 +10,7 @@ struct PlayerView: View {
     @Environment(\.dismiss) var dismiss
     @State private var isDragging = false
     @State private var sliderValue: Double = 0
+    @State private var displayedTime: Double = 0
     @State private var volume: Float = AVAudioSession.sharedInstance().outputVolume
     @State private var animatedVolume: Float = AVAudioSession.sharedInstance().outputVolume
     @State private var dragOffset: CGFloat = 0
@@ -105,13 +106,15 @@ struct PlayerView: View {
                         isDragging: $isDragging,
                         onSeek: { newValue in
                             audioPlayer.seek(to: newValue)
-                        }
+                        },
+                        displayedTime: $displayedTime
                     )
                     .onReceive(audioPlayer.$currentTime) { newValue in
                         if !isDragging {
                             withAnimation(.linear(duration: 0.2)) {
-                                sliderValue = newValue
+                                sliderValue = newValue // 슬라이더는 부드럽게
                             }
+                            displayedTime = newValue // 시간 표시는 즉시 변경
                         }
                     }
                     .padding(.horizontal, 24)
@@ -156,6 +159,7 @@ struct PlayerView: View {
                             .foregroundColor(.mainText)
 
                         // MARK: - PlayListView
+
                         Button(action: {
                             if isExpanded {
                                 withAnimation(.spring()) {
