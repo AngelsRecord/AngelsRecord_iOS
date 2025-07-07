@@ -56,9 +56,22 @@ struct MainView: View {
                 .onTapGesture { showingPlayerView = true }
                 .fullScreenCover(isPresented: $showingPlayerView) {
                     if let selected = selectedRecord {
-                        PlayerView(record: selected, audioPlayer: audioPlayer) {
-                            showingPlayerView = false
-                        }
+                        let nextItems = recordListViewModel.episodes
+                            .map { ep in
+                                let url = recordListViewModel.getLocalFileURL(for: ep.fileName)
+                                let duration = CMTimeGetSeconds(AVURLAsset(url: url).duration)
+                                return RecordListModel(title: ep.title, artist: formatted(date: ep.uploadedAt), duration: duration, fileURL: url)
+                            }
+                            .filter { $0.id != selected.id }
+
+                        PlayerView(
+                            record: selected,
+                            audioPlayer: audioPlayer,
+                            onDismiss: {
+                                showingPlayerView = false
+                            },
+                            nextItems: nextItems
+                        )
                     }
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))

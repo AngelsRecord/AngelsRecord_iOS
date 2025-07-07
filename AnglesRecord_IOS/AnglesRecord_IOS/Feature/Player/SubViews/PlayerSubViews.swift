@@ -260,11 +260,14 @@ struct PlaybackSliderView: View {
     var duration: Double
     @Binding var isDragging: Bool
     var onSeek: (Double) -> Void
-    @ObservedObject var audioPlayer: AudioPlayerManager
-    @State private var isDraggingSlider = false
+  
+  @Binding var displayedTime: Double
 
-    @State private var internalValue: Double = 0  // 내부 값 (UI 반영용)
-    @State private var lastSeekTime = Date.distantPast
+@ObservedObject var audioPlayer: AudioPlayerManager
+@State private var isDraggingSlider = false
+@State private var internalValue: Double = 0  // 내부 값 (UI 반영용)
+@State private var lastSeekTime = Date.distantPast
+
 
     var body: some View {
         VStack(spacing: 6) {
@@ -293,9 +296,10 @@ struct PlaybackSliderView: View {
             .padding(.top, 4)
 
             HStack {
-                Text(formatTime(internalValue))
+
+                Text(formatTime(displayedTime))
                 Spacer()
-                Text("-" + formatTime(duration - internalValue))
+                Text("-" + formatTime(duration - displayedTime))
             }
             .font(.footnote)
             .monospacedDigit()
@@ -355,7 +359,6 @@ struct VolumeSliderView: View {
                 isDragging: $isDragging
             )
             .frame(height:48)
-            .padding(.vertical, 6)
 
             Image(systemName: "speaker.wave.3.fill")
         }

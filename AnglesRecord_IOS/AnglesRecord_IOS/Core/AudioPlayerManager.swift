@@ -178,6 +178,15 @@ class AudioPlayerManager: ObservableObject {
             }
         }
     }
+    
+    func prepareToPlay(url: URL) {
+        let playerItem = AVPlayerItem(url: url)
+        player = AVPlayer(playerItem: playerItem)
+        addPeriodicTimeObserver()
+        isPlaying = false
+        currentTime = 0
+        duration = CMTimeGetSeconds(playerItem.asset.duration)
+    }
 
     // MARK: - Volume Control
     
