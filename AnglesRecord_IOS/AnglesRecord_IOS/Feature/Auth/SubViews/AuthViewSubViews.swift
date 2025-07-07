@@ -6,58 +6,58 @@
 //
 
 import SwiftUI
-import UIKit
 
-struct SecureLimitedTextField: UIViewRepresentable {
+struct SecureLimitedTextField: View {
     @Binding var text: String
-
-    class Coordinator: NSObject, UITextFieldDelegate {
-        var parent: SecureLimitedTextField
-
-        init(_ parent: SecureLimitedTextField) {
-            self.parent = parent
-        }
-
-        func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-            // 새로운 문자열 계산
-            let currentText = textField.text ?? ""
-            guard let stringRange = Range(range, in: currentText) else { return false }
-            let updatedText = currentText.replacingCharacters(in: stringRange, with: string)
-
-            // 10자 이내로 제한
-            if updatedText.count <= 10 {
-                parent.text = updatedText
-                return true
-            } else {
-                return false
+    @FocusState private var isFocused: Bool
+    
+    var isActive: Bool {
+        isFocused || !text.isEmpty
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // 라벨
+            Text("인증 코드 입력")
+                .font(.system(size: 15))
+                .foregroundColor(isActive ? Color("mainBlue") : Color.gray)
+                .offset(y: isActive ? 0 : 20)
+                .scaleEffect(isActive ? 0.8 : 1.2, anchor: .leading)
+                .animation(.easeInOut(duration: 0.2), value: isActive)
+            
+            // 텍스트 필드
+            HStack{
+                TextField("", text: $text)
+                    .focused($isFocused)
+                    .keyboardType(.asciiCapable)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .foregroundColor(.black)
+                    .padding(.bottom, 6)
+                    .onChange(of: text) { newValue in
+                        if newValue.count > 10 {
+                            text = String(newValue.prefix(10))
+                        }
+                    }
+                
+                if !text.isEmpty {
+                    Button(action: {
+                        text = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(Color("subText"))
+                    }
+                    .padding(.trailing, 4)
+                }
             }
+            
+            // 밑줄
+            Rectangle()
+                .frame(height: 2)
+                .foregroundColor(isActive ? Color("mainBlue") : Color.gray)
+                .animation(.easeInOut(duration: 0.2), value: isActive)
         }
-
-        // 붙여넣기 비활성화
-        override func responds(to aSelector: Selector!) -> Bool {
-            if aSelector == #selector(UIResponderStandardEditActions.paste(_:)) {
-                return false
-            }
-            return super.responds(to: aSelector)
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        return Coordinator(self)
-    }
-
-    func makeUIView(context: Context) -> UITextField {
-        let textField = UITextField()
-        textField.delegate = context.coordinator
-        textField.placeholder = "접근 코드 (최대 10자)"
-        textField.borderStyle = .roundedRect
-        textField.keyboardType = .asciiCapable
-        textField.autocorrectionType = .no
-        return textField
-    }
-
-    func updateUIView(_ uiView: UITextField, context: Context) {
-        uiView.text = text
+        .padding(.horizontal, 24)
     }
 }
 
