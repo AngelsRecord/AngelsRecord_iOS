@@ -14,6 +14,8 @@ struct PlayerView: View {
     @State private var animatedVolume: Float = AVAudioSession.sharedInstance().outputVolume
     @State private var dragOffset: CGFloat = 0
     @State private var volumeUpdateTimer: Timer?
+    @State private var systemVolumeManager = SystemVolumeManager()
+
 
     private var volumeObserver = SystemVolumeObserver()
 
@@ -142,7 +144,7 @@ struct PlayerView: View {
                         set: { newVolume in
                             self.animatedVolume = newVolume
                             self.volume = newVolume
-                            self.audioPlayer.setVolume(newVolume)
+                            self.systemVolumeManager.setSystemVolume(newVolume) // ✅ 시스템 볼륨 변경
                         }
                     ))
                         .scaleEffect(isDragging ? 1.0125 : 1.0)
