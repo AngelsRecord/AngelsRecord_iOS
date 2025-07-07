@@ -8,76 +8,142 @@
 import Foundation
 import FirebaseFirestore
 import FirebaseStorage
-import AVFoundation
 import SwiftUI
+import SwiftData
 
 class RecordListViewModel: ObservableObject {
-    @Published var episodes: [Episode] = []
+    @Published var episodes: [EpisodeModel] = []
 
-    // Firestore에서 에피소드 목록을 불러오는 함수
-    func fetchEpisodes() {
+    // MARK: - 로컬 에피소드 불러오기 (SwiftData)
+    func loadLocalEpisodes(context: ModelContext) {
+        let descriptor = FetchDescriptor<EpisodeModel>(
+            sortBy: [SortDescriptor(\.uploadedAt, order: .reverse)]
+        )
+        if let result = try? context.fetch(descriptor) {
+            DispatchQueue.main.async {
+                self.episodes = result
+            }
+        }
+    }
+
+    // MARK: - Firestore에서 에피소드 받아오고 SwiftData에 저장
+    func fetchAndSyncEpisodes(context: ModelContext) {
+        print("🔥 Firestore fetch 시작")
+
         let db = Firestore.firestore()
         db.collection("episodes").getDocuments { snapshot, error in
             if let error = error {
-                print("❌ Firestore 읽기 실패: \(error)")
+                print("❌ Firestore fetch 실패: \(error.localizedDescription)")
                 return
             }
 
             guard let documents = snapshot?.documents else {
-                print("⚠️ 문서 없음")
+                print("⚠️ 에피소드 문서 없음")
                 return
             }
 
-            print("✅ Firestore 문서 수: \(documents.count)")
+            print("🔥 Firestore에서 \(documents.count)개 에피소드 수신")
 
-            for document in documents {
-                do {
-                    let episode = try document.data(as: Episode.self)
-                    DispatchQueue.main.async {
-                        self.episodes.append(episode)
-                    }
+            DispatchQueue.main.async {
+                for document in documents {
+                    do {
+                        let episode = try document.data(as: Episode.self)
+                        print("✅ 파싱 완료: \(episode.title)")
 
-                    // ✅ 에피소드마다 오디오 자동 다운로드
-                    self.downloadFileIfNeeded(fileName: episode.fileName) { result in
-                        switch result {
-                        case .success(let url):
-                            print("✅ \(episode.fileName) 다운로드 완료: \(url.lastPathComponent)")
-                        case .failure(let error):
-                            print("❌ \(episode.fileName) 다운로드 실패: \(error.localizedDescription)")
+                        let existing = try? context.fetch(
+                            FetchDescriptor<EpisodeModel>(
+                                predicate: #Predicate { $0.id == episode.id }
+                            )
+                        ).first
+
+                        // 🔍 변경 여부 확인
+                        if let existing = existing {
+                            if existing.uploadedAt >= episode.uploadedAt {
+                                print("⚠️ 변경 없음 → 저장 생략: \(episode.id)")
+                                continue
+                            }
+                            context.delete(existing)
+                            print("🔁 업데이트 필요 → 기존 삭제: \(episode.id)")
                         }
+
+                        let newModel = EpisodeModel(
+                            id: episode.id,
+                            title: episode.title,
+                            desc: episode.description,
+                            uploadedAt: episode.uploadedAt,
+                            fileName: episode.fileName
+                        )
+                        context.insert(newModel)
+                        print("💾 새 에피소드 저장: \(episode.id)")
+
+                        // 오디오 다운로드 필요하면 수행
+                        let localURL = self.getLocalFileURL(for: episode.fileName)
+                        if self.shouldDownload(localURL: localURL, uploadedAt: episode.uploadedAt) {
+                            self.downloadFileIfNeeded(fileName: episode.fileName) { result in
+                                switch result {
+                                case .success(let url):
+                                    print("🎧 다운로드 완료: \(url.lastPathComponent)")
+                                case .failure(let error):
+                                    print("❌ 다운로드 실패: \(error.localizedDescription)")
+                                }
+                            }
+                        }
+
+                    } catch {
+                        print("❌ 파싱 실패: \(error.localizedDescription)")
                     }
-                } catch {
-                    print("❌ 파싱 오류: \(error)")
                 }
+
+                do {
+                    try context.save()
+                    print("📦 SwiftData 저장 성공")
+                } catch {
+                    print("❌ SwiftData 저장 실패: \(error.localizedDescription)")
+                }
+
+                self.loadLocalEpisodes(context: context)
             }
         }
     }
 
-    // 파일이 로컬에 없다면 Firebase Storage에서 다운로드
+
+
+    // MARK: - 로컬 파일 경로 반환
+    func getLocalFileURL(for fileName: String) -> URL {
+        let documentDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return documentDir.appendingPathComponent(fileName)
+    }
+
+    // MARK: - 파일 다운로드 필요 여부 확인
+    private func shouldDownload(localURL: URL, uploadedAt: Date) -> Bool {
+        if !FileManager.default.fileExists(atPath: localURL.path) {
+            return true
+        }
+
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: localURL.path),
+           let modified = attributes[.modificationDate] as? Date {
+            return modified < uploadedAt
+        }
+
+        return true
+    }
+
+    // MARK: - Firebase Storage에서 오디오 다운로드
     private func downloadFileIfNeeded(fileName: String, completion: @escaping (Result<URL, Error>) -> Void) {
         let localURL = getLocalFileURL(for: fileName)
 
         if FileManager.default.fileExists(atPath: localURL.path) {
-            // 이미 다운로드됨
             completion(.success(localURL))
             return
         }
 
-        let storage = Storage.storage()
-        let ref = storage.reference().child("audios/\(fileName)")
-
+        let ref = Storage.storage().reference().child("audios/\(fileName)")
         ref.write(toFile: localURL) { url, error in
             if let error = error {
                 completion(.failure(error))
-            } else {
-                completion(.success(localURL))
+            } else if let url = url {
+                completion(.success(url))
             }
         }
-    }
-
-    // 로컬 파일 경로 반환
-        func getLocalFileURL(for fileName: String) -> URL{
-        let documentDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documentDir.appendingPathComponent(fileName)
     }
 }

@@ -1,6 +1,8 @@
 import AVFoundation
 import Combine
 import Foundation
+import MediaPlayer
+
 
 class AudioPlayerManager: ObservableObject {
     private var player: AVPlayer?
@@ -11,26 +13,126 @@ class AudioPlayerManager: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 1 // 기본 1로 해서 divide-by-zero 방지
+    @Published var volume: Float = 1.0 // 볼륨 프로퍼티 추가
 
     var currentRecord: RecordListModel?
+    
+    private func setupNowPlaying(record: RecordListModel) {
+        var nowPlayingInfo = [String: Any]()
+
+        nowPlayingInfo[MPMediaItemPropertyTitle] = record.title
+        nowPlayingInfo[MPMediaItemPropertyArtist] = "엔젤스"
+        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
+        nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+
+        // ✅ 앨범 커버 이미지 추가 (mainimage_yet 사용)
+        if let image = UIImage(named: "mainimage_yet") {
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+    }
+    
+    private func updateNowPlayingTime() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
+        MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+    }
+
+    
+    private func setupRemoteCommandCenter() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            self?.togglePlayIfNeeded(forcePlay: true)
+            return .success
+        }
+
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            self?.togglePlayIfNeeded(forcePlay: false)
+            return .success
+        }
+
+        commandCenter.skipBackwardCommand.isEnabled = true
+        commandCenter.skipBackwardCommand.preferredIntervals = [15]
+        commandCenter.skipBackwardCommand.addTarget { [weak self] _ in
+            self?.skip(seconds: -15)
+            return .success
+        }
+
+        commandCenter.skipForwardCommand.isEnabled = true
+        commandCenter.skipForwardCommand.preferredIntervals = [30]
+        commandCenter.skipForwardCommand.addTarget { [weak self] _ in
+            self?.skip(seconds: 30)
+            return .success
+        }
+
+        commandCenter.changePlaybackPositionCommand.isEnabled = true
+        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self = self,
+                  let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            self.seek(to: positionEvent.positionTime)
+            return .success
+        }
+    }
+
+
+    private func togglePlayIfNeeded(forcePlay: Bool) {
+        if forcePlay {
+            if !isPlaying { togglePlayPause() }
+        } else {
+            if isPlaying { togglePlayPause() }
+        }
+    }
 
     // MARK: - Playback
 
     func play(_ record: RecordListModel) {
+        // 1. 기존 옵저버 제거
+        if let observer = timeObserver {
+            player?.removeTimeObserver(observer)
+            timeObserver = nil
+        }
+
+        // 2. 기존 플레이어 중지
+        player?.pause()
+        player = nil
+        isPlaying = false
+
+        // 3. 시간 초기화 (즉시 반영되도록)
+        DispatchQueue.main.async {
+            self.currentTime = 0
+        }
+
+        // 4. 새로운 플레이어 설정
         currentRecord = record
         let playerItem = AVPlayerItem(url: record.fileURL!)
         player = AVPlayer(playerItem: playerItem)
+        player?.volume = volume // 기존 볼륨 설정 적용
         addPeriodicTimeObserver()
         player?.play()
         isPlaying = true
 
-        // duration 설정
+        // 5. duration 설정
         if record.duration > 0 {
             duration = record.duration
         } else {
             duration = CMTimeGetSeconds(playerItem.asset.duration)
         }
+
+        // 6. 옵저버 + NowPlaying + Remote
+        addPeriodicTimeObserver()
+        setupNowPlaying(record: record)
+        setupRemoteCommandCenter()
+
+        // 7. 재생 시작
+        player?.play()
+        isPlaying = true
     }
+
 
     func togglePlayPause() {
         guard let player = player else { return }
@@ -86,14 +188,25 @@ class AudioPlayerManager: ObservableObject {
         duration = CMTimeGetSeconds(playerItem.asset.duration)
     }
 
+    // MARK: - Volume Control
+    
+    func setVolume(_ newVolume: Float) {
+        volume = max(0.0, min(1.0, newVolume)) // 0~1 범위로 제한
+        player?.volume = volume
+    }
+
     // MARK: - Time Observer
 
     private func addPeriodicTimeObserver() {
         guard let player = player else { return }
 
-        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] time in
+        timeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
+            queue: .main
+        ) { [weak self] time in
             guard let self = self else { return }
             self.currentTime = CMTimeGetSeconds(time)
+            self.updateNowPlayingTime()
         }
     }
 

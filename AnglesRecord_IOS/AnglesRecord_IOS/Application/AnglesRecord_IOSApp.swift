@@ -19,8 +19,12 @@ struct AnglesRecord_IOSApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var authStatus: AuthStatus = .loading
 
+    /// ✅ EpisodeModel, RecordListModel을 모두 포함한 공유 컨테이너
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([ RecordListModel.self ])
+        let schema = Schema([
+            RecordListModel.self,
+            EpisodeModel.self  // ✅ 반드시 포함되어야 SwiftData에 저장됨
+        ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         return try! ModelContainer(for: schema, configurations: [config])
     }()
@@ -53,8 +57,10 @@ struct AnglesRecord_IOSApp: App {
                 }
             }
         }
-        .modelContainer(sharedModelContainer)
+        .modelContainer(sharedModelContainer)  // ✅ 단일 컨테이너로 앱 전체 연결
     }
+
+    // MARK: - 유틸
 
     func checkAuthenticationStatus() -> Bool {
         return KeychainHelper.load("verifiedAccessCode") != nil
@@ -76,11 +82,7 @@ struct AnglesRecord_IOSApp: App {
             }
         }
 
-        if canOpen(path: "/Applications/Cydia.app") {
-            return true
-        }
-
-        return false
+        return canOpen(path: "/Applications/Cydia.app")
     }
 
     func canOpen(path: String) -> Bool {

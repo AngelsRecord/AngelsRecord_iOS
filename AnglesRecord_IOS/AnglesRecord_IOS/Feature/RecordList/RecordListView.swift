@@ -6,9 +6,12 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct RecordListView: View {
     @StateObject private var viewModel = RecordListViewModel()
+    @Environment(\.modelContext) private var modelContext
+    @State private var isRefreshing = false
 
     var body: some View {
         NavigationView {
@@ -17,20 +20,23 @@ struct RecordListView: View {
                     Text(episode.title)
                         .font(.headline)
 
-                    Text(episode.description)
+                    Text(episode.desc)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    Text("업로드: \(formatted(date: episode.uploadDate))")
+                    Text("업로드: \(formatted(date: episode.uploadedAt))")
                         .font(.caption)
                         .foregroundColor(.gray)
                 }
                 .padding(.vertical, 8)
             }
             .navigationTitle("에피소드 목록")
-        }
-        .onAppear {
-            viewModel.fetchEpisodes()
+            .refreshable {
+                viewModel.fetchAndSyncEpisodes(context: modelContext)
+            }
+            .onAppear {
+                viewModel.loadLocalEpisodes(context: modelContext)
+            }
         }
     }
 
@@ -41,6 +47,7 @@ struct RecordListView: View {
         return formatter.string(from: date)
     }
 }
+
 
 
 #Preview {

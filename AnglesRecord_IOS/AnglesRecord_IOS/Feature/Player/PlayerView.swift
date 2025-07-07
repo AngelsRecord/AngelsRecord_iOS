@@ -16,6 +16,8 @@ struct PlayerView: View {
     @State private var animatedVolume: Float = AVAudioSession.sharedInstance().outputVolume
     @State private var dragOffset: CGFloat = 0
     @State private var volumeUpdateTimer: Timer?
+    @State private var systemVolumeManager = SystemVolumeManager()
+
 
     @State private var isExpanded = true
     @State private var showPlaylist = false
@@ -205,7 +207,9 @@ struct PlayerView: View {
                         onSeek: { newValue in
                             audioPlayer.seek(to: newValue)
                         },
-                        displayedTime: $displayedTime
+                        displayedTime: $displayedTime,
+                      audioPlayer: audioPlayer
+
                     )
                     .onReceive(audioPlayer.$currentTime) { newValue in
                         if !isDragging {
@@ -245,8 +249,16 @@ struct PlayerView: View {
                     .padding(.top, 36)
                     .scaleEffect(isDragging ? 1.0125 : 1.0)
                     .animation(.easeInOut(duration: 0.2), value: isDragging)
-                    
-                    VolumeSliderView(volume: $animatedVolume)
+
+
+                    VolumeSliderView(volume: Binding(
+                        get: { self.animatedVolume },
+                        set: { newVolume in
+                            self.animatedVolume = newVolume
+                            self.volume = newVolume
+                            self.systemVolumeManager.setSystemVolume(newVolume) 
+                        }
+                    ))
                         .scaleEffect(isDragging ? 1.0125 : 1.0)
                         .animation(.easeInOut(duration: 0.2), value: isDragging)
                         .padding(.top, 32)
@@ -326,6 +338,8 @@ struct PlayerView: View {
             volumeObserver.onVolumeChange = { newVolume in
                 DispatchQueue.main.async {
                     self.volume = newVolume
+                    self.animatedVolume = newVolume // ✅ 슬라이더 동기화
+                    self.audioPlayer.setVolume(newVolume) // ✅ 시스템 볼륨 → audioPlayer 반영
                     self.startVolumeAnimation()
                 }
             }
