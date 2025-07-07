@@ -169,6 +169,7 @@ struct MiniPlayerView: View {
     let record: RecordListModel
     @ObservedObject var audioPlayer: AudioPlayerManager
     let onDelete: () -> Void
+    let onNextEpisode: () -> Void
 
     var body: some View {
         HStack(spacing: 16) {
@@ -206,7 +207,7 @@ struct MiniPlayerView: View {
             
             // 다음곡 버튼
             Button(action: {
-                // 다음곡 기능 (현재는 빈 액션)
+                onNextEpisode()
             }) {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 20))
@@ -224,7 +225,7 @@ struct MiniPlayerView: View {
                 .cornerRadius(12)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
         )
-        .padding(.bottom, -32)
+        .padding(.bottom, -40)
     }
     
     private func formattedDate(_ date: Date) -> String {
@@ -246,7 +247,8 @@ struct MiniPlayerView: View {
                 duration: 205.0
             ),
             audioPlayer: AudioPlayerManager(),
-            onDelete: {}
+            onDelete: {},
+            onNextEpisode: {}
         )
     }
     .background(Color.gray.opacity(0.1))
