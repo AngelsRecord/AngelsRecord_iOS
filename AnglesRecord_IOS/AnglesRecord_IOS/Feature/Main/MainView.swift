@@ -262,13 +262,19 @@ struct MainView: View {
         guard let currentRecord = selectedRecord else { return }
         
         // 현재 재생 중인 에피소드의 제목으로 전체 목록에서 찾기
-        guard let currentIndex = recordListViewModel.episodes.firstIndex(where: { $0.title == currentRecord.title }) else { return }
+        guard let currentEpisode = recordListViewModel.episodes.first(where: { $0.title == currentRecord.title }) else { return }
         
-        // 다음 에피소드 인덱스 계산 (마지막이면 첫 번째로)
-        let nextIndex = (currentIndex + 1) % recordListViewModel.episodes.count
-        let nextEpisode = recordListViewModel.episodes[nextIndex]
+        // 현재 에피소드보다 나중에 업로드된 에피소드 찾기 (다음 회차)
+        let nextEpisode = recordListViewModel.episodes
+            .filter { $0.uploadedAt > currentEpisode.uploadedAt }
+            .min(by: { $0.uploadedAt < $1.uploadedAt })
         
-        playEpisode(nextEpisode)
+        // 다음 에피소드가 있으면 재생, 없으면 가장 오래된 에피소드(1화) 재생
+        let episodeToPlay = nextEpisode ?? recordListViewModel.episodes.min(by: { $0.uploadedAt < $1.uploadedAt })
+        
+        if let episode = episodeToPlay {
+            playEpisode(episode)
+        }
     }
     
     private func deleteRecord(_ record: RecordListModel) {
