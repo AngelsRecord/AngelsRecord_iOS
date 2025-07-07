@@ -253,7 +253,6 @@ struct VolumeSliderView: View {
                 isDragging: $isDragging
             )
             .frame(height:48)
-            .padding(.vertical, 6)
 
             Image(systemName: "speaker.wave.3.fill")
         }
