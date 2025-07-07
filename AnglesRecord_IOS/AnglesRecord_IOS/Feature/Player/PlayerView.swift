@@ -137,7 +137,12 @@ struct PlayerView: View {
                     .scaleEffect(isDragging ? 1.0125 : 1.0)
                     .animation(.easeInOut(duration: 0.2), value: isDragging)
 
-                    VolumeSliderView(volume: $animatedVolume)
+                    VolumeSliderView(volume: Binding(
+                        get: { audioPlayer.volume },
+                        set: { newVolume in
+                            audioPlayer.setVolume(newVolume)
+                        }
+                    ))
                         .scaleEffect(isDragging ? 1.0125 : 1.0)
                         .animation(.easeInOut(duration: 0.2), value: isDragging)
                         .padding(.horizontal, 24)
