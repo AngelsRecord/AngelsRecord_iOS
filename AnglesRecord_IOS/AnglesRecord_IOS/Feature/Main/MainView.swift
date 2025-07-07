@@ -48,6 +48,9 @@ struct MainView: View {
                     audioPlayer: audioPlayer,
                     onDelete: {
                         deleteRecord(record)
+                    },
+                    onNextEpisode: {
+                        playNextEpisode()
                     }
                 )
                 .onTapGesture { showingPlayerView = true }
@@ -242,6 +245,19 @@ struct MainView: View {
         }
     }
 
+    private func playNextEpisode() {
+        guard let currentRecord = selectedRecord else { return }
+        
+        // 현재 재생 중인 에피소드의 제목으로 전체 목록에서 찾기
+        guard let currentIndex = recordListViewModel.episodes.firstIndex(where: { $0.title == currentRecord.title }) else { return }
+        
+        // 다음 에피소드 인덱스 계산 (마지막이면 첫 번째로)
+        let nextIndex = (currentIndex + 1) % recordListViewModel.episodes.count
+        let nextEpisode = recordListViewModel.episodes[nextIndex]
+        
+        playEpisode(nextEpisode)
+    }
+    
     private func deleteRecord(_ record: RecordListModel) {
         if audioPlayer.currentRecord?.id == record.id {
             audioPlayer.stop()
