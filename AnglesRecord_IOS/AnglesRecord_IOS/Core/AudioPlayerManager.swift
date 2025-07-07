@@ -13,6 +13,7 @@ class AudioPlayerManager: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 1 // 기본 1로 해서 divide-by-zero 방지
+    @Published var volume: Float = 1.0 // 볼륨 프로퍼티 추가
 
     var currentRecord: RecordListModel?
     
@@ -110,6 +111,10 @@ class AudioPlayerManager: ObservableObject {
         currentRecord = record
         let playerItem = AVPlayerItem(url: record.fileURL!)
         player = AVPlayer(playerItem: playerItem)
+        player?.volume = volume // 기존 볼륨 설정 적용
+        addPeriodicTimeObserver()
+        player?.play()
+        isPlaying = true
 
         // 5. duration 설정
         if record.duration > 0 {
@@ -172,6 +177,13 @@ class AudioPlayerManager: ObservableObject {
                 isPlaying = true
             }
         }
+    }
+
+    // MARK: - Volume Control
+    
+    func setVolume(_ newVolume: Float) {
+        volume = max(0.0, min(1.0, newVolume)) // 0~1 범위로 제한
+        player?.volume = volume
     }
 
     // MARK: - Time Observer
