@@ -2,10 +2,17 @@ import SwiftUI
 import FirebaseFirestore
 import FirebaseFunctions
 
+extension View {
+    func endTextEditing() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
 struct AuthView: View {
     @State private var code: String = ""
     @State private var isAuthenticated = false
     @State private var errorMessage: String?
+    
     
     var body: some View {
         VStack {
@@ -17,7 +24,6 @@ struct AuthView: View {
             
             SecureLimitedTextField(text: $code)
                 .frame(height: 64)
-                .padding(.leading, 24)
                 .padding(.top, 54)
 
 
@@ -28,19 +34,28 @@ struct AuthView: View {
             }
             
             Spacer()
+            ZStack{
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { self.endTextEditing() }
+            }
+            
             
             Button("시작하기") {
                 verifyCode(code)
             }
             .frame(width:353, height: 64)
-            .background(.subText)
+            .background((code.isEmpty ? Color("subText") : Color("mainBlue")))
             .foregroundColor(.buttonText)
             .cornerRadius(8)
+            .padding(.bottom, 20)
+        }
+        .onTapGesture {
+            self.endTextEditing()
         }
         .fullScreenCover(isPresented: $isAuthenticated) {
             MainView()
         }
-        Spacer()
     }
     
     func verifyCode(_ input: String) {
@@ -64,3 +79,6 @@ struct AuthView: View {
         }
     }
 }
+
+
+
