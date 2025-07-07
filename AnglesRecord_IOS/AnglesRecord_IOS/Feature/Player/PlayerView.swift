@@ -138,9 +138,11 @@ struct PlayerView: View {
                     .animation(.easeInOut(duration: 0.2), value: isDragging)
 
                     VolumeSliderView(volume: Binding(
-                        get: { audioPlayer.volume },
+                        get: { self.animatedVolume },
                         set: { newVolume in
-                            audioPlayer.setVolume(newVolume)
+                            self.animatedVolume = newVolume
+                            self.volume = newVolume
+                            self.audioPlayer.setVolume(newVolume)
                         }
                     ))
                         .scaleEffect(isDragging ? 1.0125 : 1.0)
@@ -191,6 +193,8 @@ struct PlayerView: View {
             volumeObserver.onVolumeChange = { newVolume in
                 DispatchQueue.main.async {
                     self.volume = newVolume
+                    self.animatedVolume = newVolume // ✅ 슬라이더 동기화
+                    self.audioPlayer.setVolume(newVolume) // ✅ 시스템 볼륨 → audioPlayer 반영
                     self.startVolumeAnimation()
                 }
             }
