@@ -6,68 +6,57 @@
 //
 
 import SwiftUI
-import UIKit
 
-struct SecureLimitedTextField: UIViewRepresentable {
+struct SecureLimitedTextField: View {
     @Binding var text: String
-
-    class Coordinator: NSObject, UITextFieldDelegate {
-        var parent: SecureLimitedTextField
-
-        init(_ parent: SecureLimitedTextField) {
-            self.parent = parent
-        }
-
-        func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-            // 새로운 문자열 계산
-            let currentText = textField.text ?? ""
-            guard let stringRange = Range(range, in: currentText) else { return false }
-            let updatedText = currentText.replacingCharacters(in: stringRange, with: string)
-
-            // 10자 이내로 제한
-            if updatedText.count <= 10 {
-                parent.text = updatedText
-                return true
-            } else {
-                return false
-            }
-        }
-
-    }
-
-    func makeCoordinator() -> Coordinator {
-        return Coordinator(self)
+    @FocusState private var isFocused: Bool
+    
+    var isActive: Bool {
+        isFocused || !text.isEmpty
     }
     
-    class BottomPaddedTextField: UITextField {
-        override func textRect(forBounds bounds: CGRect) -> CGRect {
-            return bounds.inset(by: UIEdgeInsets(top: 0, left: 0, bottom: 28, right: 0))
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // 라벨
+            Text("인증 코드 입력")
+                .font(.system(size: 15))
+                .foregroundColor(isActive ? Color("mainBlue") : Color.gray)
+                .offset(y: isActive ? 0 : 20)
+                .scaleEffect(isActive ? 0.8 : 1.2, anchor: .leading)
+                .animation(.easeInOut(duration: 0.2), value: isActive)
+            
+            // 텍스트 필드
+            HStack{
+                TextField("", text: $text)
+                    .focused($isFocused)
+                    .keyboardType(.asciiCapable)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .foregroundColor(.black)
+                    .padding(.bottom, 6)
+                    .onChange(of: text) { newValue in
+                        if newValue.count > 10 {
+                            text = String(newValue.prefix(10))
+                        }
+                    }
+                
+                if !text.isEmpty {
+                    Button(action: {
+                        text = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(Color("subText"))
+                    }
+                    .padding(.trailing, 4)
+                }
+            }
+            
+            // 밑줄
+            Rectangle()
+                .frame(height: 2)
+                .foregroundColor(isActive ? Color("mainBlue") : Color.gray)
+                .animation(.easeInOut(duration: 0.2), value: isActive)
         }
-
-        override func editingRect(forBounds bounds: CGRect) -> CGRect {
-            return bounds.inset(by: UIEdgeInsets(top: 0, left: 0, bottom: 28, right: 0))
-        }
-
-        override func placeholderRect(forBounds bounds: CGRect) -> CGRect {
-            return bounds.inset(by: UIEdgeInsets(top: 0, left: 0, bottom: 28, right: 0))
-        }
-    }
-
-    func makeUIView(context: Context) -> UITextField {
-        let textField = BottomPaddedTextField()
-        textField.delegate = context.coordinator
-        textField.placeholder = "인증 코드 입력"
-        textField.borderStyle = .none
-        let bottomLine = CALayer()
-        bottomLine.frame = CGRect(x: 0.0, y: 43.0, width: UIScreen.main.bounds.width - 60, height: 1.0)
-        bottomLine.backgroundColor = UIColor(named: "subText")?.cgColor
-        textField.layer.addSublayer(bottomLine)
-        textField.keyboardType = .asciiCapable
-        textField.autocorrectionType = .no
-        return textField
-    }
-
-    func updateUIView(_ uiView: UITextField, context: Context) {
-        uiView.text = text
+        .padding(.horizontal, 24)
     }
 }
