@@ -3,16 +3,23 @@ import SwiftUI
 struct SplashView: View {
     var body: some View {
         VStack(spacing: 20) {
-            Image(systemName: "music.note.house.fill")
-                .font(.system(size: 80))
-                .foregroundColor(.primary)
-                .symbolEffect(.pulse)
+            Spacer()
             
-            Text("AngelsRecord")
-                .font(.title)
-                .fontWeight(.medium)
+            Image(.splashIcon)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 283, height: 203)
+
+            Spacer()
+            
+            Text("© ANGELS")
+                .font(Font.SFPro.SemiBold.s13)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(UIColor.systemBackground))
+        .background(Color.background)
     }
-} 
+}
+
+#Preview {
+    SplashView()
+}

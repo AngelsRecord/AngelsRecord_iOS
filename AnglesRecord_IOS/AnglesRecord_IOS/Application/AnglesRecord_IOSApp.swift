@@ -35,25 +35,26 @@ struct AnglesRecord_IOSApp: App {
                 switch authStatus {
                 case .loading:
                     SplashView()
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                if let _ = KeychainHelper.load("verifiedAccessCode") {
-                                    authStatus = .authenticated
-                                } else {
-                                    authStatus = .unauthenticated
-                                }
-
-                                if isDeviceJailbroken() {
-                                    print("🚨 탈옥 감지됨")
-                                }
-                            }
-                        }
 
                 case .authenticated:
                     MainView()
 
                 case .unauthenticated:
                     AuthView()
+                }
+            }
+            .animation(.easeInOut(duration: 0.4), value: authStatus)
+            .onAppear {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    if let _ = KeychainHelper.load("verifiedAccessCode") {
+                        authStatus = .authenticated
+                    } else {
+                        authStatus = .unauthenticated
+                    }
+
+                    if isDeviceJailbroken() {
+                        print("🚨 탈옥 감지됨")
+                    }
                 }
             }
         }
