@@ -169,6 +169,7 @@ struct MiniPlayerView: View {
     let record: RecordListModel
     @ObservedObject var audioPlayer: AudioPlayerManager
     let onDelete: () -> Void
+    let onNextEpisode: () -> Void
 
     var body: some View {
         HStack(spacing: 16) {
@@ -206,7 +207,7 @@ struct MiniPlayerView: View {
             
             // 다음곡 버튼
             Button(action: {
-                // 다음곡 기능 (현재는 빈 액션)
+                onNextEpisode()
             }) {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 20))
@@ -224,7 +225,7 @@ struct MiniPlayerView: View {
                 .cornerRadius(12)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
         )
-        .padding(.bottom, -32)
+        .padding(.bottom, -40)
     }
     
     private func formattedDate(_ date: Date) -> String {
@@ -246,7 +247,8 @@ struct MiniPlayerView: View {
                 duration: 205.0
             ),
             audioPlayer: AudioPlayerManager(),
-            onDelete: {}
+            onDelete: {},
+            onNextEpisode: {}
         )
     }
     .background(Color.gray.opacity(0.1))
@@ -258,11 +260,14 @@ struct PlaybackSliderView: View {
     var duration: Double
     @Binding var isDragging: Bool
     var onSeek: (Double) -> Void
-    @ObservedObject var audioPlayer: AudioPlayerManager
-    @State private var isDraggingSlider = false
+  
+  @Binding var displayedTime: Double
 
-    @State private var internalValue: Double = 0  // 내부 값 (UI 반영용)
-    @State private var lastSeekTime = Date.distantPast
+@ObservedObject var audioPlayer: AudioPlayerManager
+@State private var isDraggingSlider = false
+@State private var internalValue: Double = 0  // 내부 값 (UI 반영용)
+@State private var lastSeekTime = Date.distantPast
+
 
     var body: some View {
         VStack(spacing: 6) {
@@ -291,9 +296,10 @@ struct PlaybackSliderView: View {
             .padding(.top, 4)
 
             HStack {
-                Text(formatTime(internalValue))
+
+                Text(formatTime(displayedTime))
                 Spacer()
-                Text("-" + formatTime(duration - internalValue))
+                Text("-" + formatTime(duration - displayedTime))
             }
             .font(.footnote)
             .monospacedDigit()
@@ -353,7 +359,6 @@ struct VolumeSliderView: View {
                 isDragging: $isDragging
             )
             .frame(height:48)
-            .padding(.vertical, 6)
 
             Image(systemName: "speaker.wave.3.fill")
         }
