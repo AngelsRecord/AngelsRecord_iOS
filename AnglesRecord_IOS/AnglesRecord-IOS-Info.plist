@@ -8,5 +8,10 @@
 		<string>SFProText-Regular.otf</string>
 		<string>SFProText-Medium.otf</string>
 	</array>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIImageName</key>
+		<string></string>
+	</dict>
 </dict>
 </plist>

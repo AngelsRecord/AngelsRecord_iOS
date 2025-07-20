@@ -19,6 +19,7 @@ extension Font {
         enum SemiBold {
             static let s16 = Font.custom("SFProText-Semibold", size: 16)
             static let s14 = Font.custom("SFProText-Semibold", size: 14)
+            static let s13 = Font.custom("SFProText-Semibold", size: 13)
             static let s12 = Font.custom("SFProText-Semibold", size: 12)
             static let s10 = Font.custom("SFProText-Semibold", size: 10)
             static let s11 = Font.custom("SFProText-Semibold", size: 11)
