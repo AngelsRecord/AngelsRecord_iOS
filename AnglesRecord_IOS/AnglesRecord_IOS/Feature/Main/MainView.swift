@@ -12,6 +12,7 @@ struct MainView: View {
     @State private var showingFilePicker = false
     @State private var selectedRecord: RecordListModel?
     @AppStorage("isDarkMode") private var isDarkMode = false
+    @AppStorage("shouldFetchNewEpisodes") private var shouldFetchNewEpisodes = false
     @State private var showingPlayerView = false
     @State private var isLoading = false
     @State private var isRefreshing = false
@@ -188,8 +189,15 @@ struct MainView: View {
     }
 
     private func loadInitialData() {
-        // ✅ fetch 말고 local load만 수행
+        // ✅ 로컬 에피소드 먼저 불러오기
         recordListViewModel.loadLocalEpisodes(context: modelContext)
+
+        // ✅ 푸시 수신 후 자동 동기화
+        if shouldFetchNewEpisodes {
+            print("📥 푸시 감지됨 → 자동 다운로드 시작")
+            recordListViewModel.fetchAndSyncEpisodes(context: modelContext)
+            shouldFetchNewEpisodes = false
+        }
     }
 
     private func playLatestEpisode() {

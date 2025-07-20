@@ -10,8 +10,11 @@ import Firebase
 import AVFoundation
 import UserNotifications
 import FirebaseMessaging
+import SwiftUI
 
 class AppDelegate: NSObject, UIApplicationDelegate {
+    
+    @AppStorage("shouldFetchNewEpisodes") var shouldFetchNewEpisodes: Bool = false
     
     func application(
         _ application: UIApplication,
@@ -72,11 +75,22 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 // MARK: - UNUserNotificationCenterDelegate
 
 extension AppDelegate: UNUserNotificationCenterDelegate {
-    // ✅ 앱이 foreground일 때도 알림 배너 표시
+    // ✅ 앱이 foreground일 때 알림 배너 표시 + 플래그 저장
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        shouldFetchNewEpisodes = true
+        print("🔔 Foreground 알림 수신 → 다운로드 플래그 ON")
         completionHandler([.banner, .sound, .badge])
+    }
+
+    // ✅ 사용자가 알림 클릭 시
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        shouldFetchNewEpisodes = true
+        print("👉 알림 클릭됨 → 다운로드 플래그 ON")
+        completionHandler()
     }
 }
 
@@ -87,8 +101,5 @@ extension AppDelegate: MessagingDelegate {
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         guard let fcmToken = fcmToken else { return }
         print("✅ FCM 토큰 수신: \(fcmToken)")
-
-        // 이 시점에서 Firestore 저장 또는 서버 전송 가능
-        // 예: NotificationCenter.post로 ViewModel에게 전달해도 됨
     }
 }
