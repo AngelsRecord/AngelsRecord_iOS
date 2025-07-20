@@ -9,11 +9,16 @@ import SwiftUI
 import FirebaseFirestore
 import FirebaseFunctions
 import FirebaseMessaging
+import SwiftData
 
 struct AuthView: View {
     @State private var code: String = ""
     @State private var isAuthenticated = false
     @State private var errorMessage: String?
+
+    // ✅ 전역 공유 ViewModel 사용
+    @EnvironmentObject var recordListViewModel: RecordListViewModel
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         VStack {
@@ -33,6 +38,7 @@ struct AuthView: View {
             }
 
             Spacer()
+
             ZStack {
                 Color.clear
                     .contentShape(Rectangle())
@@ -43,7 +49,7 @@ struct AuthView: View {
                 verifyCode(code)
             }
             .frame(width: 353, height: 64)
-            .background((code.isEmpty ? Color("subText") : Color("mainBlue")))
+            .background(code.isEmpty ? Color("subText") : Color("mainBlue"))
             .foregroundColor(.buttonText)
             .cornerRadius(8)
             .padding(.bottom, 20)
@@ -56,40 +62,43 @@ struct AuthView: View {
         }
     }
 
-    // MARK: - 인증 코드 검증
+    // MARK: - 인증 코드 검증 및 FCM 저장 + 에피소드 fetch
     func verifyCode(_ input: String) {
         let functions = Functions.functions()
 
         functions.httpsCallable("verifyAccessCode").call(["code": input]) { result, error in
-            if let error = error {
-                print("❌ 인증 실패: \(error.localizedDescription)")
-                errorMessage = "잘못된 코드입니다."
-            } else if let data = result?.data as? [String: Any],
-                      let channelId = data["channelId"] as? String {
-                print("✅ 인증 성공: \(channelId)")
-                isAuthenticated = true
-
-                // 🔐 Keychain 저장
-                let status = KeychainHelper.save("verifiedAccessCode", value: channelId)
-                print("🔐 키체인 저장 결과: \(status == errSecSuccess ? "성공" : "실패(\(status))")")
-
-                // 🔁 FCM 토큰 저장
-                if let fcmToken = Messaging.messaging().fcmToken {
-                    saveFcmTokenToFirestore(userId: channelId, token: fcmToken)
-                } else {
-                    // 아직 토큰이 nil인 경우, 토큰 갱신을 기다렸다가 NotificationCenter 등으로 처리 가능
-                    print("⚠️ FCM 토큰이 아직 준비되지 않았습니다.")
-                }
-
-            } else {
-                errorMessage = "응답 형식 오류"
+            guard error == nil,
+                  let data = result?.data as? [String: Any],
+                  let channelId = data["channelId"] as? String else {
+                errorMessage = "❌ 인증 실패 또는 응답 오류"
+                return
             }
+
+            print("✅ 인증 성공: \(channelId)")
+
+            // 🔐 Keychain 저장
+            let status = KeychainHelper.save("verifiedAccessCode", value: channelId)
+            print("🔐 키체인 저장 결과: \(status == errSecSuccess ? "성공" : "실패(\(status))")")
+
+            // ✅ FCM 토큰 저장
+            if let fcmToken = Messaging.messaging().fcmToken {
+                saveFcmTokenToFirestore(userId: channelId, token: fcmToken)
+            } else {
+                print("⚠️ FCM 토큰이 아직 준비되지 않았습니다.")
+            }
+
+            // ✅ 에피소드 초기 동기화
+            recordListViewModel.fetchAndSyncEpisodes(context: modelContext)
+
+            // ✅ 인증 완료 → MainView로 전환
+            isAuthenticated = true
         }
     }
 
+    // MARK: - Firestore에 fcmToken 배열 저장
     func saveFcmTokenToFirestore(userId: String, token: String) {
         let db = Firestore.firestore()
-        db.collection("users").document("channelA").setData([
+        db.collection("users").document(userId).setData([
             "fcmTokens": FieldValue.arrayUnion([token])
         ], merge: true) { error in
             if let error = error {

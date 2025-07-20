@@ -19,6 +19,9 @@ struct AnglesRecord_IOSApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var authStatus: AuthStatus = .loading
 
+    // ✅ 에피소드 리스트 ViewModel 전역 공유
+    @StateObject private var recordListViewModel = RecordListViewModel()
+
     /// ✅ EpisodeModel, RecordListModel을 모두 포함한 공유 컨테이너
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -44,6 +47,7 @@ struct AnglesRecord_IOSApp: App {
                 }
             }
             .animation(.easeInOut(duration: 0.4), value: authStatus)
+            .environmentObject(recordListViewModel) // ✅ ViewModel 주입
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     if let _ = KeychainHelper.load("verifiedAccessCode") {
