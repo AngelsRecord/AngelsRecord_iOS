@@ -18,7 +18,6 @@ struct PlayerView: View {
     @State private var volumeUpdateTimer: Timer?
     @State private var systemVolumeManager = SystemVolumeManager()
 
-
     @State private var isExpanded = true
     @State private var showPlaylist = false
 
@@ -38,35 +37,33 @@ struct PlayerView: View {
         ZStack {
             Color.black.opacity(0.001)
                 .ignoresSafeArea()
-            
+
             VStack(spacing: 0) {
                 Capsule()
                     .frame(width: 40, height: 5)
                     .foregroundColor(.gray)
                     .padding(.top, 10)
                     .padding(.bottom, 10)
-                
+
                 // MARK: - 현재 재생 Card
-                
+
                 VStack(spacing: 0) {
                     HStack(alignment: .top, spacing: 0) {
                         Image("mainimage_yet")
                             .resizable()
                             .aspectRatio(1, contentMode: .fit)
                             .matchedGeometryEffect(id: "coverImage", in: animation)
-                        //                        .scaleEffect(isExpanded ? 1.0 : 0.3)
-                            .scaleEffect(audioPlayer.isPlaying ? 1.0 : 0.95)
+                            .scaleEffect(isExpanded ? (audioPlayer.isPlaying ? 1.0 : 0.95) : 1.0)
                             .frame(width: isExpanded ? nil : 60,
                                    height: isExpanded ? nil : 60)
                             .frame(maxWidth: isExpanded ? .infinity : 60, alignment: isExpanded ? .center : .leading)
-                            .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 16 : 16))
+                            .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 16 : 4))
                             .shadow(radius: isExpanded ? 10 : 0)
                             .padding(.trailing, isExpanded ? 0 : 12)
                             .padding(.top, 16)
                             .animation(.spring(), value: isExpanded)
                             .animation(.easeInOut(duration: 0.3), value: audioPlayer.isPlaying)
-                        
-                        //                    VStack(spacing: 16) {
+
                         if !isExpanded { // 버튼 클릭했을 때
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -79,14 +76,14 @@ struct PlayerView: View {
                                     )
                                     .makeCompact()
                                     .frame(height: 24)
-                                    
+
                                     Text("엔젤스")
                                         .font(.subheadline)
                                         .foregroundColor(.gray)
                                 }
-                                
+
                                 Spacer()
-                                
+
                                 Menu {
                                     Button("2x") { audioPlayer.setRate(2.0) }
                                     Button("1.75x") { audioPlayer.setRate(1.75) }
@@ -108,19 +105,18 @@ struct PlayerView: View {
                         }
                     } // 현재 재생 사진
 //                    .padding(.horizontal, 24)
-                    
-                    
+
                     if isExpanded {
                         VStack(spacing: 4) {
                             Text(formattedDate(record.addedDate))
                                 .font(.caption)
                                 .foregroundColor(.subText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                            
+
                             HStack(alignment: .top) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     // MARK: - Title
-                                    
+
                                     MarqueeText(
                                         text: record.title,
                                         font: UIFont.SFPro.SemiBold.s16,
@@ -131,16 +127,16 @@ struct PlayerView: View {
                                     )
                                     .makeCompact()
                                     .foregroundColor(.mainText)
-                                    
+
                                     Text("엔젤스")
                                         .font(.subheadline)
                                         .foregroundColor(.subText)
                                 }
-                                
+
                                 Spacer()
-                                
+
                                 // MARK: - 배속 버튼
-                                
+
                                 Menu {
                                     Button("2x") { audioPlayer.setRate(2.0) }
                                     Button("1.75x") { audioPlayer.setRate(1.75) }
@@ -164,41 +160,51 @@ struct PlayerView: View {
                     } // 현재 재생
                 }
                 if showPlaylist {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            HStack {
-                                Text("재생 목록")
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
-                                
-                                Spacer()
-                            }
-                            .padding(.top, 36)
-                            
-                            //                            ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            Text("재생 목록")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+
+                            Spacer()
+                        }
+                        .padding(.top, 36)
+                        .padding(.bottom, 10)
+
+                        ScrollView {
                             VStack(spacing: 8) {
                                 ForEach(nextItems) { item in
                                     playlistItemButton(for: item)
                                 }
+                                Spacer().frame(height: 10)
                             }
-                            .padding(.top, 20)
-                            //                            }
+                            .padding(.top, 10)
                         }
-//                        .padding(.horizontal, 24)
-                        .padding(.bottom, 150)
+                        .frame(height: 350)
+                        .overlay(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.background.opacity(0.0), Color.background]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 30)
+                            .frame(maxHeight: .infinity, alignment: .bottom)
+                        )
                     }
+                    .padding(.bottom, 150)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .animation(.spring(), value: showPlaylist)
-                    //                        .padding(.horizontal, 24)
                 }
-                
+
                 Spacer()
             }
             .padding(.horizontal, 24)
-            
+
             // MARK: - 재생 컨트롤 영역
+
             VStack(spacing: 0) {
                 Spacer()
+
                 VStack(spacing: 0) {
                     PlaybackSliderView(
                         value: $sliderValue,
@@ -208,8 +214,7 @@ struct PlayerView: View {
                             audioPlayer.seek(to: newValue)
                         },
                         displayedTime: $displayedTime,
-                      audioPlayer: audioPlayer
-
+                        audioPlayer: audioPlayer
                     )
                     .onReceive(audioPlayer.$currentTime) { newValue in
                         if !isDragging {
@@ -219,8 +224,8 @@ struct PlayerView: View {
                             displayedTime = newValue // 시간 표시
                         }
                     }
-//                    .padding(.horizontal, 24)
-                    
+                    //                    .padding(.horizontal, 24)
+
                     HStack(spacing: 50) {
                         Button {
                             audioPlayer.skip(seconds: -15)
@@ -229,7 +234,7 @@ struct PlayerView: View {
                                 .font(.system(size: 28))
                                 .foregroundColor(.mainText)
                         }
-                        
+
                         Button {
                             audioPlayer.togglePlayPause()
                         } label: {
@@ -237,7 +242,7 @@ struct PlayerView: View {
                                 .font(.system(size: 48))
                                 .foregroundColor(.mainText)
                         }
-                        
+
                         Button {
                             audioPlayer.skip(seconds: 30)
                         } label: {
@@ -250,27 +255,25 @@ struct PlayerView: View {
                     .scaleEffect(isDragging ? 1.0125 : 1.0)
                     .animation(.easeInOut(duration: 0.2), value: isDragging)
 
-
                     VolumeSliderView(volume: Binding(
                         get: { self.animatedVolume },
                         set: { newVolume in
                             self.animatedVolume = newVolume
                             self.volume = newVolume
-                            self.systemVolumeManager.setSystemVolume(newVolume) 
+                            self.systemVolumeManager.setSystemVolume(newVolume)
                         }
                     ))
-                        .scaleEffect(isDragging ? 1.0125 : 1.0)
-                        .animation(.easeInOut(duration: 0.2), value: isDragging)
-                        .padding(.top, 32)
-                        
-                    
+                    .scaleEffect(isDragging ? 1.0125 : 1.0)
+                    .animation(.easeInOut(duration: 0.2), value: isDragging)
+                    .padding(.top, 32)
+
                     HStack(spacing: 50) {
                         AirPlayButtonView()
                             .frame(width: 24, height: 24)
                             .foregroundColor(.mainText)
-                        
+
                         // MARK: - PlayListView
-                        
+
                         Button(action: {
                             if isExpanded {
                                 withAnimation(.spring()) {
@@ -286,7 +289,7 @@ struct PlayerView: View {
                                 withAnimation(.spring()) {
                                     showPlaylist = false
                                     isExpanded = true
-                                    
+
                                     //                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                                     //                                        withAnimation(.spring()) {
                                     //                                            isExpanded = true
@@ -303,35 +306,41 @@ struct PlayerView: View {
                     .scaleEffect(isDragging ? 1.0125 : 1.0)
                     .animation(.easeInOut(duration: 0.2), value: isDragging)
                     .padding(.top, 12)
-                    
+
                     //                    Spacer(minLength: 32)
                 }
                 //                .frame(maxHeight: .infinity)
                 //                .padding(.top, 20)
                 .padding(.bottom, 24)
+                .frame(maxWidth: .infinity)
+                .background(
+                    Color.background
+                        .ignoresSafeArea(edges: .horizontal)
+                        .ignoresSafeArea(edges: .bottom)
+                )
             }
         }
 //            .frame(alignment: .top)
-            .offset(y: max(0, dragOffset))
-            .scaleEffect(dragScale)
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        if value.translation.height > 0 {
-                            dragOffset = value.translation.height
+        .offset(y: max(0, dragOffset))
+        .scaleEffect(dragScale)
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    if value.translation.height > 0 {
+                        dragOffset = value.translation.height
+                    }
+                }
+                .onEnded { value in
+                    if value.translation.height > 150 {
+                        onDismiss()
+                    } else {
+                        withAnimation(.spring()) {
+                            dragOffset = 0
                         }
                     }
-                    .onEnded { value in
-                        if value.translation.height > 150 {
-                            onDismiss()
-                        } else {
-                            withAnimation(.spring()) {
-                                dragOffset = 0
-                            }
-                        }
-                    }
-            )
-            .animation(.easeOut(duration: 0.2), value: dragOffset)
+                }
+        )
+        .animation(.easeOut(duration: 0.2), value: dragOffset)
 //        }
         .background(HiddenSystemVolumeView().frame(width: 0, height: 0))
         .onAppear {
@@ -426,7 +435,10 @@ struct PlayerView_Previews: PreviewProvider {
             record: mockRecord,
             audioPlayer: mockAudioPlayer,
             onDismiss: {},
-            nextItems: [mockNext1, mockNext2]
+            nextItems: [
+                mockNext1, mockNext2, mockNext3, mockNext4, mockNext5,
+                mockNext6, mockNext7, mockNext8, mockNext9, mockNext10
+            ]
         )
         .preferredColorScheme(.light)
     }
@@ -463,6 +475,78 @@ struct PlayerView_Previews: PreviewProvider {
             title: "다음 녹음 2",
             artist: "엔젤스",
             duration: 100.0,
+            fileURL: URL(fileURLWithPath: "/dev/null")
+        )
+    }
+
+    static var mockNext3: RecordListModel {
+        RecordListModel(
+            title: "다음 녹음 3",
+            artist: "엔젤스",
+            duration: 95.0,
+            fileURL: URL(fileURLWithPath: "/dev/null")
+        )
+    }
+
+    static var mockNext4: RecordListModel {
+        RecordListModel(
+            title: "다음 녹음 4",
+            artist: "엔젤스",
+            duration: 110.0,
+            fileURL: URL(fileURLWithPath: "/dev/null")
+        )
+    }
+
+    static var mockNext5: RecordListModel {
+        RecordListModel(
+            title: "다음 녹음 5",
+            artist: "엔젤스",
+            duration: 87.0,
+            fileURL: URL(fileURLWithPath: "/dev/null")
+        )
+    }
+
+    static var mockNext6: RecordListModel {
+        RecordListModel(
+            title: "다음 녹음 6",
+            artist: "엔젤스",
+            duration: 93.0,
+            fileURL: URL(fileURLWithPath: "/dev/null")
+        )
+    }
+
+    static var mockNext7: RecordListModel {
+        RecordListModel(
+            title: "다음 녹음 7",
+            artist: "엔젤스",
+            duration: 105.0,
+            fileURL: URL(fileURLWithPath: "/dev/null")
+        )
+    }
+
+    static var mockNext8: RecordListModel {
+        RecordListModel(
+            title: "다음 녹음 8",
+            artist: "엔젤스",
+            duration: 101.0,
+            fileURL: URL(fileURLWithPath: "/dev/null")
+        )
+    }
+
+    static var mockNext9: RecordListModel {
+        RecordListModel(
+            title: "다음 녹음 9",
+            artist: "엔젤스",
+            duration: 98.0,
+            fileURL: URL(fileURLWithPath: "/dev/null")
+        )
+    }
+
+    static var mockNext10: RecordListModel {
+        RecordListModel(
+            title: "다음 녹음 10",
+            artist: "엔젤스",
+            duration: 112.0,
             fileURL: URL(fileURLWithPath: "/dev/null")
         )
     }
