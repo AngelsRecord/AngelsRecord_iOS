@@ -6,11 +6,13 @@ import AVFoundation
 struct MainView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) var colorScheme
+    @EnvironmentObject var recordListViewModel: RecordListViewModel
+
     @StateObject private var audioPlayer = AudioPlayerManager()
-    @StateObject private var recordListViewModel = RecordListViewModel()
     @State private var showingFilePicker = false
     @State private var selectedRecord: RecordListModel?
     @AppStorage("isDarkMode") private var isDarkMode = false
+    @AppStorage("shouldFetchNewEpisodes") private var shouldFetchNewEpisodes = false
     @State private var showingPlayerView = false
     @State private var isLoading = false
     @State private var isRefreshing = false
@@ -27,7 +29,7 @@ struct MainView: View {
 
                     Divider().padding(.horizontal)
 
-                    if isLoading {
+                    if recordListViewModel.isLoadingEpisodes {
                         loadingSection
                     } else {
                         episodeListContent
@@ -187,11 +189,14 @@ struct MainView: View {
     }
 
     private func loadInitialData() {
-        isLoading = true
+        // ✅ 로컬 에피소드 먼저 불러오기
         recordListViewModel.loadLocalEpisodes(context: modelContext)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation { isLoading = false }
+        // ✅ 푸시 수신 후 자동 동기화
+        if shouldFetchNewEpisodes {
+            print("📥 푸시 감지됨 → 자동 다운로드 시작")
+            recordListViewModel.fetchAndSyncEpisodes(context: modelContext)
+            shouldFetchNewEpisodes = false
         }
     }
 
@@ -260,23 +265,19 @@ struct MainView: View {
 
     private func playNextEpisode() {
         guard let currentRecord = selectedRecord else { return }
-        
-        // 현재 재생 중인 에피소드의 제목으로 전체 목록에서 찾기
         guard let currentEpisode = recordListViewModel.episodes.first(where: { $0.title == currentRecord.title }) else { return }
-        
-        // 현재 에피소드보다 나중에 업로드된 에피소드 찾기 (다음 회차)
+
         let nextEpisode = recordListViewModel.episodes
             .filter { $0.uploadedAt > currentEpisode.uploadedAt }
             .min(by: { $0.uploadedAt < $1.uploadedAt })
-        
-        // 다음 에피소드가 있으면 재생, 없으면 가장 오래된 에피소드(1화) 재생
+
         let episodeToPlay = nextEpisode ?? recordListViewModel.episodes.min(by: { $0.uploadedAt < $1.uploadedAt })
-        
+
         if let episode = episodeToPlay {
             playEpisode(episode)
         }
     }
-    
+
     private func deleteRecord(_ record: RecordListModel) {
         if audioPlayer.currentRecord?.id == record.id {
             audioPlayer.stop()
@@ -294,5 +295,5 @@ struct MainView: View {
 }
 
 #Preview {
-    MainView()
+    MainView().environmentObject(RecordListViewModel())
 }
