@@ -104,7 +104,6 @@ struct PlayerView: View {
                             .padding(.top, 16)
                         }
                     } // 현재 재생 사진
-//                    .padding(.horizontal, 24)
 
                     if isExpanded {
                         VStack(spacing: 4) {
@@ -156,8 +155,7 @@ struct PlayerView: View {
                             }
                         }
                         .padding(.top, 32)
-//                        .padding(.horizontal, 24)
-                    } // 현재 재생
+                    }
                 }
                 if showPlaylist {
                     VStack(alignment: .leading, spacing: 0) {
@@ -224,7 +222,6 @@ struct PlayerView: View {
                             displayedTime = newValue // 시간 표시
                         }
                     }
-                    //                    .padding(.horizontal, 24)
 
                     HStack(spacing: 50) {
                         Button {
@@ -280,21 +277,11 @@ struct PlayerView: View {
                                     isExpanded = false
                                     showPlaylist = true
                                 }
-                                //                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                //                                    withAnimation(.spring()) {
-                                //                                        showPlaylist = true
-                                //                                    }
-                                //                                }
+
                             } else {
                                 withAnimation(.spring()) {
                                     showPlaylist = false
                                     isExpanded = true
-
-                                    //                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                    //                                        withAnimation(.spring()) {
-                                    //                                            isExpanded = true
-                                    //                                        }
-                                    //                                    }
                                 }
                             }
                         }) {
@@ -306,11 +293,7 @@ struct PlayerView: View {
                     .scaleEffect(isDragging ? 1.0125 : 1.0)
                     .animation(.easeInOut(duration: 0.2), value: isDragging)
                     .padding(.top, 12)
-
-                    //                    Spacer(minLength: 32)
                 }
-                //                .frame(maxHeight: .infinity)
-                //                .padding(.top, 20)
                 .padding(.bottom, 24)
                 .frame(maxWidth: .infinity)
                 .background(
@@ -320,7 +303,6 @@ struct PlayerView: View {
                 )
             }
         }
-//            .frame(alignment: .top)
         .offset(y: max(0, dragOffset))
         .scaleEffect(dragScale)
         .gesture(

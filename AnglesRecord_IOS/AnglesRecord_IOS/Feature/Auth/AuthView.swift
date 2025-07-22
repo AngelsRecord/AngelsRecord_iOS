@@ -45,13 +45,16 @@ struct AuthView: View {
                     .onTapGesture { self.endTextEditing() }
             }
 
-            Button("시작하기") {
+            Button(action: {
                 verifyCode(code)
+            }) {
+                Text("시작하기")
+                    .font(Font.SFPro.SemiBold.s16)
+                    .frame(width: 353, height: 64)
+                    .foregroundColor(.buttonText)
+                    .background(code.isEmpty ? Color("subText") : Color("mainBlue"))
+                    .cornerRadius(8)
             }
-            .frame(width: 353, height: 64)
-            .background(code.isEmpty ? Color("subText") : Color("mainBlue"))
-            .foregroundColor(.buttonText)
-            .cornerRadius(8)
             .padding(.bottom, 20)
         }
         .onTapGesture {
@@ -116,5 +119,25 @@ extension View {
     func endTextEditing() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
+    }
+}
+
+
+#Preview {
+    // 1. SwiftData Preview용 ModelContainer 생성
+    do {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: RecordListModel.self, configurations: config)
+
+        // 2. Preview 전용 ViewModel 생성
+        let previewViewModel = RecordListViewModel()
+
+        // 3. AuthView에 환경 객체 주입
+        return AuthView()
+            .environmentObject(previewViewModel)
+            .modelContainer(container)
+    } catch {
+        // 4. 실패 시 기본 View만 반환
+        return AuthView()
     }
 }
