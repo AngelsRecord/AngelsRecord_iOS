@@ -15,13 +15,9 @@ class ThickerSlider: UISlider {
             height: trackHeight
         )
     }
-
-    // ✅ 아무 곳에서 드래그 시작 가능
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-        return true  // 슬라이드 시작은 허용하되 값은 아직 변경하지 않음
+        return true
     }
-
-    // ✅ 실제 드래그 중일 때 값 업데이트
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         let point = touch.location(in: self)
         let percentage = max(0, min(1, point.x / bounds.width))
@@ -48,7 +44,6 @@ struct CustomProgressSlider: UIViewRepresentable {
         slider.minimumValue = Float(range.lowerBound)
         slider.maximumValue = Float(range.upperBound)
 
-        // Thumb
         let thumbSize = CGSize(width: 16, height: 16)
         let thumb = UIGraphicsImageRenderer(size: thumbSize).image { context in
             let rect = CGRect(origin: .zero, size: thumbSize)
@@ -58,15 +53,11 @@ struct CustomProgressSlider: UIViewRepresentable {
         }
         slider.setThumbImage(thumb, for: .normal)
 
-        // 둥근 트랙 이미지 만들기 (width는 최소 8 이상, 가운데 stretch 가능하게)
         let trackHeight = slider.trackHeight
         let cornerRadius = trackHeight / 2
-        let trackWidth: CGFloat = 12  // ✅ 좌우 6px씩 모서리를 cap으로 보호
+        let trackWidth: CGFloat = 12
         let capInset: CGFloat = 6
-
         let trackSize = CGSize(width: trackWidth, height: trackHeight)
-
-        // 왼쪽 (진행된) 트랙 이미지
         let minTrackImage = UIGraphicsImageRenderer(size: trackSize).image { _ in
             let path = UIBezierPath(
                 roundedRect: CGRect(origin: .zero, size: trackSize),
@@ -76,7 +67,6 @@ struct CustomProgressSlider: UIViewRepresentable {
             path.fill()
         }
 
-        // 오른쪽 (남은) 트랙 이미지
         let maxTrackImage = UIGraphicsImageRenderer(size: trackSize).image { _ in
             let path = UIBezierPath(
                 roundedRect: CGRect(origin: .zero, size: trackSize),
@@ -142,7 +132,6 @@ struct CustomProgressSlider: UIViewRepresentable {
 
 // MARK: - UIImage Helpers
 private extension UIImage {
-    /// 원형 단색 이미지 생성 (트랙용)
     convenience init?(color: UIColor, size: CGSize) {
         UIGraphicsBeginImageContextWithOptions(size, false, 0)
         color.setFill()
@@ -153,8 +142,6 @@ private extension UIImage {
         guard let cgImage = image?.cgImage else { return nil }
         self.init(cgImage: cgImage)
     }
-
-    /// 크기 변경 (thumb용)
     func resize(to size: CGSize) -> UIImage {
         UIGraphicsBeginImageContextWithOptions(size, false, self.scale)
         defer { UIGraphicsEndImageContext() }
@@ -173,14 +160,13 @@ struct MiniPlayerView: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            // 앨범 이미지
+        
             Image("mainimage_yet")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 44, height: 44)
-                .cornerRadius(4)
-            
-            // 제목과 아티스트
+                .cornerRadius(8)
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(record.title)
                     .font(Font.SFPro.Medium.s16)
@@ -194,25 +180,22 @@ struct MiniPlayerView: View {
             }
             
             Spacer()
-            
-            // 재생/일시정지 버튼
             Button(action: {
                 audioPlayer.togglePlayPause()
             }) {
                 Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 20))
+                    .font(.system(size: 24))
                     .foregroundColor(.primary)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 36, height: 36)
             }
             
-            // 다음곡 버튼
             Button(action: {
                 onNextEpisode()
             }) {
                 Image(systemName: "forward.fill")
-                    .font(.system(size: 20))
+                    .font(.system(size: 24))
                     .foregroundColor(.primary)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 36, height: 36)
             }
         }
         .offset(y: -10)
@@ -256,7 +239,7 @@ struct MiniPlayerView: View {
 
 
 struct PlaybackSliderView: View {
-    @Binding var value: Double              // 외부 상태
+    @Binding var value: Double
     var duration: Double
     @Binding var isDragging: Bool
     var onSeek: (Double) -> Void
@@ -265,7 +248,7 @@ struct PlaybackSliderView: View {
 
 @ObservedObject var audioPlayer: AudioPlayerManager
 @State private var isDraggingSlider = false
-@State private var internalValue: Double = 0  // 내부 값 (UI 반영용)
+@State private var internalValue: Double = 0
 @State private var lastSeekTime = Date.distantPast
 
 
@@ -312,15 +295,11 @@ struct PlaybackSliderView: View {
             .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
         }
         .onAppear {
-            internalValue = value  // 최초 sync
+            internalValue = value
         }
         .onChange(of: value) { newValue in
             guard !isDragging else { return }
-
-            // 최근 seek 후 0.4초 이내는 무시
             guard Date().timeIntervalSince(lastSeekTime) > 0.4 else { return }
-
-            // 슬라이더 값을 부드럽게 반영
             withAnimation(.linear(duration: 0.4)) {
                 if newValue >= duration - 1 {
                     internalValue = duration
@@ -369,11 +348,9 @@ struct VolumeSliderView: View {
 struct AirPlayButtonView: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let routePickerView = AVRoutePickerView()
-        routePickerView.activeTintColor = UIColor.label  // 연결 시 색상
-        routePickerView.tintColor = UIColor.label        // 기본 색상
-        routePickerView.backgroundColor = .clear         // 배경 투명
-
-        // Optional: 아이콘 스타일 변경 방지
+        routePickerView.activeTintColor = UIColor.label
+        routePickerView.tintColor = UIColor.label
+        routePickerView.backgroundColor = .clear
         routePickerView.prioritizesVideoDevices = false
 
         return routePickerView
