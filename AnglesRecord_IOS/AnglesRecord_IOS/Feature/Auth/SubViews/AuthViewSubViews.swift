@@ -61,3 +61,14 @@ struct SecureLimitedTextField: View {
     }
 }
 
+#Preview {
+    SecureLimitedTextFieldPreviewWrapper()
+}
+
+private struct SecureLimitedTextFieldPreviewWrapper: View {
+    @State private var inputText: String = ""
+
+    var body: some View {
+        SecureLimitedTextField(text: $inputText)
+    }
+}
