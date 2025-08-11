@@ -19,8 +19,8 @@ struct SecureLimitedTextField: View {
         VStack(alignment: .leading, spacing: 6) {
             // 라벨
             Text("인증 코드 입력")
-                .font(.system(size: 15))
-                .foregroundColor(isActive ? Color("mainBlue") : Color.gray)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(isActive ? Color("mainBlue") : Color("subText"))
                 .offset(y: isActive ? 0 : 20)
                 .scaleEffect(isActive ? 0.8 : 1.2, anchor: .leading)
                 .animation(.easeInOut(duration: 0.2), value: isActive)
@@ -32,7 +32,7 @@ struct SecureLimitedTextField: View {
                     .keyboardType(.asciiCapable)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
-                    .foregroundColor(.black)
+                    .foregroundColor(.mainText)
                     .padding(.bottom, 6)
                     .onChange(of: text) { newValue in
                         if newValue.count > 10 {
@@ -54,7 +54,7 @@ struct SecureLimitedTextField: View {
             // 밑줄
             Rectangle()
                 .frame(height: 2)
-                .foregroundColor(isActive ? Color("mainBlue") : Color.gray)
+                .foregroundColor(isActive ? Color("mainBlue") : Color("subText"))
                 .animation(.easeInOut(duration: 0.2), value: isActive)
         }
         .padding(.horizontal, 24)
