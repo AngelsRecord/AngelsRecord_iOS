@@ -97,8 +97,9 @@ struct MainView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 200, height: 200)
-                .cornerRadius(16)
+                .cornerRadius(8)
                 .padding(.top, 41)
+                .cornerRadius(8)
 
             Text("전지적 씨팝 시점: 전팝시")
                 .font(Font.SFPro.SemiBold.s16)
@@ -120,7 +121,7 @@ struct MainView: View {
                 .padding(.vertical, 14)
                 .padding(.horizontal, 74.5)
                 .background(Color("iconBack"))
-                .cornerRadius(12)
+                .cornerRadius(8)
             }
             .padding(.top, 16)
             .padding(.bottom, 30)

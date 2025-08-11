@@ -15,9 +15,13 @@ class ThickerSlider: UISlider {
             height: trackHeight
         )
     }
+
+    // ✅ 아무 곳에서 드래그 시작 가능
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         return true
     }
+
+    // ✅ 실제 드래그 중일 때 값 업데이트
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         let point = touch.location(in: self)
         let percentage = max(0, min(1, point.x / bounds.width))
@@ -29,8 +33,6 @@ class ThickerSlider: UISlider {
         return true
     }
 }
-
-
 // MARK: - SwiftUI 래퍼
 struct CustomProgressSlider: UIViewRepresentable {
     @Binding var value: Double
@@ -58,6 +60,8 @@ struct CustomProgressSlider: UIViewRepresentable {
         let trackWidth: CGFloat = 12
         let capInset: CGFloat = 6
         let trackSize = CGSize(width: trackWidth, height: trackHeight)
+
+        // 왼쪽 (진행된) 트랙 이미지
         let minTrackImage = UIGraphicsImageRenderer(size: trackSize).image { _ in
             let path = UIBezierPath(
                 roundedRect: CGRect(origin: .zero, size: trackSize),
@@ -94,8 +98,6 @@ struct CustomProgressSlider: UIViewRepresentable {
 
         return slider
     }
-
-
 
     func updateUIView(_ uiView: ThickerSlider, context: Context) {
         uiView.value = Float(value)
@@ -166,7 +168,8 @@ struct MiniPlayerView: View {
                 .scaledToFit()
                 .frame(width: 44, height: 44)
                 .cornerRadius(8)
-
+            
+            // 제목과 아티스트
             VStack(alignment: .leading, spacing: 4) {
                 Text(record.title)
                     .font(Font.SFPro.Medium.s16)
@@ -180,32 +183,37 @@ struct MiniPlayerView: View {
             }
             
             Spacer()
-            Button(action: {
-                audioPlayer.togglePlayPause()
-            }) {
-                Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(.primary)
-                    .frame(width: 36, height: 36)
-            }
             
-            Button(action: {
-                onNextEpisode()
-            }) {
-                Image(systemName: "forward.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(.primary)
-                    .frame(width: 36, height: 36)
+            HStack(spacing: 8) {
+                // 재생/일시정지 버튼
+                Button(action: {
+                    audioPlayer.togglePlayPause()
+                }) {
+                    Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.primary)
+                        .frame(width: 44, height: 44)
+                }
+                
+                // 다음곡 버튼
+                Button(action: {
+                    onNextEpisode()
+                }) {
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.primary)
+                        .frame(width: 44, height: 44)
+                }
             }
         }
         .offset(y: -10)
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 16)
         .padding(.top, 20)
         .padding(.bottom, 16)
         .frame(height: 90)
         .background(
             Color(UIColor.systemBackground)
-                .cornerRadius(12)
+                .cornerRadius(8)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
         )
         .padding(.bottom, -40)
@@ -218,25 +226,48 @@ struct MiniPlayerView: View {
         return formatter.string(from: date)
     }
 }
+struct VolumeSliderView: View {
+    @Binding var volume: Float
+    @State private var isDragging = false
 
-#Preview {
-    VStack {
-        Spacer()
-        
-        MiniPlayerView(
-            record: RecordListModel(
-                title: "Ep.1 대나무숲",
-                artist: "6월 22일",
-                duration: 205.0
-            ),
-            audioPlayer: AudioPlayerManager(),
-            onDelete: {},
-            onNextEpisode: {}
-        )
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: "speaker.fill")
+
+            CustomProgressSlider(
+                value: Binding(
+                    get: { Double(volume) },
+                    set: { newValue in
+                        volume = Float(min(newValue, 1.0))
+                    }
+                ),
+                range: 0...1,
+                onEditingChanged: { dragging in
+                    isDragging = dragging
+                },
+                isDragging: $isDragging
+            )
+            .frame(height:48)
+
+            Image(systemName: "speaker.wave.3.fill")
+        }
+        .frame(width: 335)
     }
-    .background(Color.gray.opacity(0.1))
 }
 
+struct AirPlayButtonView: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let routePickerView = AVRoutePickerView()
+        routePickerView.activeTintColor = UIColor.label
+        routePickerView.tintColor = UIColor.label
+        routePickerView.backgroundColor = .clear
+        routePickerView.prioritizesVideoDevices = false
+
+        return routePickerView
+    }
+
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
 
 struct PlaybackSliderView: View {
     @Binding var value: Double
@@ -315,46 +346,20 @@ struct PlaybackSliderView: View {
     }
 }
 
-
-struct VolumeSliderView: View {
-    @Binding var volume: Float
-    @State private var isDragging = false
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "speaker.fill")
-
-            CustomProgressSlider(
-                value: Binding(
-                    get: { Double(volume) },
-                    set: { newValue in
-                        volume = Float(min(newValue, 1.0))
-                    }
-                ),
-                range: 0...1,
-                onEditingChanged: { dragging in
-                    isDragging = dragging
-                },
-                isDragging: $isDragging
-            )
-            .frame(height:48)
-
-            Image(systemName: "speaker.wave.3.fill")
-        }
-        .frame(width: 335)
+#Preview {
+    VStack {
+        Spacer()
+        
+        MiniPlayerView(
+            record: RecordListModel(
+                title: "Ep.1 대나무숲",
+                artist: "6월 22일",
+                duration: 205.0
+            ),
+            audioPlayer: AudioPlayerManager(),
+            onDelete: {},
+            onNextEpisode: {}
+        )
     }
-}
-
-struct AirPlayButtonView: UIViewRepresentable {
-    func makeUIView(context: Context) -> AVRoutePickerView {
-        let routePickerView = AVRoutePickerView()
-        routePickerView.activeTintColor = UIColor.label
-        routePickerView.tintColor = UIColor.label
-        routePickerView.backgroundColor = .clear
-        routePickerView.prioritizesVideoDevices = false
-
-        return routePickerView
-    }
-
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+    .background(Color.gray.opacity(0.1))
 }
