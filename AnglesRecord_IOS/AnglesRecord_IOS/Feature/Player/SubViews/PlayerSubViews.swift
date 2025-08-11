@@ -39,7 +39,27 @@ struct CustomProgressSlider: UIViewRepresentable {
     let range: ClosedRange<Double>
     var onEditingChanged: ((Bool) -> Void)? = nil
     @Binding var isDragging: Bool
-    
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    // Helper to generate a resizable track image with a given color and size
+    private func makeTrackImage(color: UIColor,
+                                trackHeight: CGFloat,
+                                trackWidth: CGFloat,
+                                capInset: CGFloat) -> UIImage {
+        let cornerRadius = trackHeight / 2
+        let size = CGSize(width: trackWidth, height: trackHeight)
+        let image = UIGraphicsImageRenderer(size: size).image { _ in
+            let path = UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: cornerRadius)
+            color.setFill()
+            path.fill()
+        }
+        return image.resizableImage(
+            withCapInsets: UIEdgeInsets(top: 0, left: capInset, bottom: 0, right: capInset),
+            resizingMode: .stretch
+        )
+    }
+
     func makeUIView(context: Context) -> ThickerSlider {
         let slider = ThickerSlider(frame: .zero)
         slider.trackHeight = 6
@@ -55,42 +75,25 @@ struct CustomProgressSlider: UIViewRepresentable {
         }
         slider.setThumbImage(thumb, for: .normal)
 
+        // Generate dynamic track images so colors adapt to Light/Dark mode
         let trackHeight = slider.trackHeight
-        let cornerRadius = trackHeight / 2
         let trackWidth: CGFloat = 12
         let capInset: CGFloat = 6
-        let trackSize = CGSize(width: trackWidth, height: trackHeight)
 
-        // 왼쪽 (진행된) 트랙 이미지
-        let minTrackImage = UIGraphicsImageRenderer(size: trackSize).image { _ in
-            let path = UIBezierPath(
-                roundedRect: CGRect(origin: .zero, size: trackSize),
-                cornerRadius: cornerRadius
-            )
-            UIColor.label.setFill()
-            path.fill()
-        }
-
-        let maxTrackImage = UIGraphicsImageRenderer(size: trackSize).image { _ in
-            let path = UIBezierPath(
-                roundedRect: CGRect(origin: .zero, size: trackSize),
-                cornerRadius: cornerRadius
-            )
-            UIColor.systemGray5.setFill()
-            path.fill()
-        }
-
-        let capInsets = UIEdgeInsets(top: 0, left: capInset, bottom: 0, right: capInset)
-
-        slider.setMinimumTrackImage(
-            minTrackImage.resizableImage(withCapInsets: capInsets, resizingMode: .stretch),
-            for: .normal
+        let minImage = makeTrackImage(
+            color: UIColor(Color("mainText")),
+            trackHeight: trackHeight,
+            trackWidth: trackWidth,
+            capInset: capInset
         )
-
-        slider.setMaximumTrackImage(
-            maxTrackImage.resizableImage(withCapInsets: capInsets, resizingMode: .stretch),
-            for: .normal
+        let maxImage = makeTrackImage(
+            color: UIColor(Color("subText")),
+            trackHeight: trackHeight,
+            trackWidth: trackWidth,
+            capInset: capInset
         )
+        slider.setMinimumTrackImage(minImage, for: .normal)
+        slider.setMaximumTrackImage(maxImage, for: .normal)
 
         slider.addTarget(context.coordinator, action: #selector(Coordinator.valueChanged), for: .valueChanged)
         slider.addTarget(context.coordinator, action: #selector(Coordinator.touchDown), for: .touchDown)
@@ -101,6 +104,25 @@ struct CustomProgressSlider: UIViewRepresentable {
 
     func updateUIView(_ uiView: ThickerSlider, context: Context) {
         uiView.value = Float(value)
+        // Regenerate images on update so appearance changes (Light/Dark) are reflected
+        let trackHeight = uiView.trackHeight
+        let trackWidth: CGFloat = 12
+        let capInset: CGFloat = 6
+
+        let minImage = makeTrackImage(
+            color: UIColor(Color("mainText")),
+            trackHeight: trackHeight,
+            trackWidth: trackWidth,
+            capInset: capInset
+        )
+        let maxImage = makeTrackImage(
+            color: UIColor(Color("subText")),
+            trackHeight: trackHeight,
+            trackWidth: trackWidth,
+            capInset: capInset
+        )
+        uiView.setMinimumTrackImage(minImage, for: .normal)
+        uiView.setMaximumTrackImage(maxImage, for: .normal)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -212,7 +234,7 @@ struct MiniPlayerView: View {
         .padding(.bottom, 16)
         .frame(height: 90)
         .background(
-            Color(UIColor.systemBackground)
+            Color.background
                 .cornerRadius(8)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
         )
@@ -251,7 +273,7 @@ struct VolumeSliderView: View {
 
             Image(systemName: "speaker.wave.3.fill")
         }
-        .frame(width: 335)
+        .frame(width: .infinity)
     }
 }
 
@@ -306,9 +328,11 @@ struct PlaybackSliderView: View {
                 anchor: .center
             )
             .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
-            .frame(width: 335, height: 24)
+            .frame(width: .infinity, height: 24)
             .padding(.top, 4)
 
+            
+            // Play 시간
             HStack {
 
                 Text(formatTime(displayedTime))
@@ -318,12 +342,13 @@ struct PlaybackSliderView: View {
             .font(.footnote)
             .monospacedDigit()
             .foregroundColor(.secondary)
-            .frame(width: 335)
+            .frame(width: .infinity)
             .scaleEffect(
                 CGSize(width: isDraggingSlider ? 1.03 : 1.0, height: isDraggingSlider ? 1.03 : 1.0),
                 anchor: .center
             )
             .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
+            .padding(.horizontal, 2.5)
         }
         .onAppear {
             internalValue = value
