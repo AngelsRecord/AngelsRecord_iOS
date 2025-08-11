@@ -15,26 +15,34 @@ struct AuthView: View {
     @State private var code: String = ""
     @State private var isAuthenticated = false
     @State private var errorMessage: String?
+    @State private var isLoading = false
 
-    // ✅ 전역 공유 ViewModel 사용
     @EnvironmentObject var recordListViewModel: RecordListViewModel
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         VStack {
             Text("인증 코드를\n입력해주세요.")
-                .font(.title)
+                .font(.system(size: 25, weight: .bold))
                 .bold()
-                .padding(.trailing, 220)
-                .padding(.top, 73)
+                .padding(.trailing, 218)
+                .padding(.top, 74)
 
             SecureLimitedTextField(text: $code)
                 .frame(height: 64)
-                .padding(.top, 54)
+                .padding(.top, 45)
+                .onChange(of: code) { _ in
+                    errorMessage = nil
+                }
 
-            if let errorMessage = errorMessage {
+            if isLoading {
+                Text("인증중 ...")
+                    .foregroundColor(.gray)
+                    .font(.system(size: 12))
+            } else if let errorMessage = errorMessage {
                 Text(errorMessage)
                     .foregroundColor(.red)
+                    .font(.system(size: 12))
             }
 
             Spacer()
@@ -49,13 +57,14 @@ struct AuthView: View {
                 verifyCode(code)
             }) {
                 Text("시작하기")
-                    .font(Font.SFPro.SemiBold.s16)
+                    .font(.system(size: 16, weight: .bold))
                     .frame(width: 353, height: 64)
                     .foregroundColor(.buttonText)
-                    .background(code.isEmpty ? Color("subText") : Color("mainBlue"))
+                    .background(code.isEmpty ? Color("buttonColor") : Color("mainBlue"))
                     .cornerRadius(8)
             }
-            .padding(.bottom, 20)
+            .padding(.bottom, 3)
+            .disabled(isLoading)
         }
         .onTapGesture {
             self.endTextEditing()
@@ -67,13 +76,19 @@ struct AuthView: View {
 
     // MARK: - 인증 코드 검증 및 FCM 저장 + 에피소드 fetch
     func verifyCode(_ input: String) {
+        isLoading = true
+        errorMessage = nil
+
         let functions = Functions.functions()
 
         functions.httpsCallable("verifyAccessCode").call(["code": input]) { result, error in
             guard error == nil,
                   let data = result?.data as? [String: Any],
                   let channelId = data["channelId"] as? String else {
-                errorMessage = "❌ 인증 실패 또는 응답 오류"
+                DispatchQueue.main.async {
+                    isLoading = false
+                    errorMessage = "유효하지 않은 코드입니다."
+                }
                 return
             }
 
@@ -94,7 +109,10 @@ struct AuthView: View {
             recordListViewModel.fetchAndSyncEpisodes(context: modelContext)
 
             // ✅ 인증 완료 → MainView로 전환
-            isAuthenticated = true
+            DispatchQueue.main.async {
+                isLoading = false
+                isAuthenticated = true
+            }
         }
     }
 
@@ -114,14 +132,12 @@ struct AuthView: View {
 }
 
 // MARK: - 키보드 내리기 유틸
-
 extension View {
     func endTextEditing() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
     }
 }
-
 
 #Preview {
     // 1. SwiftData Preview용 ModelContainer 생성
