@@ -16,10 +16,12 @@ class ThickerSlider: UISlider {
         )
     }
 
+    // ✅ 아무 곳에서 드래그 시작 가능
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         return true
     }
 
+    // ✅ 실제 드래그 중일 때 값 업데이트
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         let point = touch.location(in: self)
         let percentage = max(0, min(1, point.x / bounds.width))
@@ -57,9 +59,9 @@ struct CustomProgressSlider: UIViewRepresentable {
         let cornerRadius = trackHeight / 2
         let trackWidth: CGFloat = 12
         let capInset: CGFloat = 6
-
         let trackSize = CGSize(width: trackWidth, height: trackHeight)
 
+        // 왼쪽 (진행된) 트랙 이미지
         let minTrackImage = UIGraphicsImageRenderer(size: trackSize).image { _ in
             let path = UIBezierPath(
                 roundedRect: CGRect(origin: .zero, size: trackSize),
@@ -160,7 +162,7 @@ struct MiniPlayerView: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            // 앨범 이미지
+        
             Image("mainimage_yet")
                 .resizable()
                 .scaledToFit()
@@ -277,7 +279,7 @@ struct PlaybackSliderView: View {
 
 @ObservedObject var audioPlayer: AudioPlayerManager
 @State private var isDraggingSlider = false
-@State private var internalValue: Double = 0  // 내부 값 (UI 반영용)
+@State private var internalValue: Double = 0
 @State private var lastSeekTime = Date.distantPast
 
 
