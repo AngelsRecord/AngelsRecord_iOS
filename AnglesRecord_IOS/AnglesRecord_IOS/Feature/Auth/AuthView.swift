@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import FirebaseAuth
 import FirebaseFirestore
 import FirebaseFunctions
 import FirebaseMessaging
@@ -74,59 +75,97 @@ struct AuthView: View {
         }
     }
 
-    // MARK: - 인증 코드 검증 및 FCM 저장 + 에피소드 fetch
+    /// AuthView 내부에서 호출되는 버튼 액션 함수
     func verifyCode(_ input: String) {
+        // UI 상태
         isLoading = true
         errorMessage = nil
 
-        let functions = Functions.functions()
+        print("👉 [Auth] verify tapped:", input)
 
-        functions.httpsCallable("verifyAccessCode").call(["code": input]) { result, error in
-            guard error == nil,
-                  let data = result?.data as? [String: Any],
-                  let channelId = data["channelId"] as? String else {
-                DispatchQueue.main.async {
-                    isLoading = false
-                    errorMessage = "유효하지 않은 코드입니다."
+        // onCall은 인증 컨텍스트가 있으면 더 안정적이므로 익명 로그인 보장
+        let proceed: () -> Void = {
+            // 리전은 이 함수 안에서만 명시
+            let functions = Functions.functions(region: "asia-northeast3")
+
+            // 1) 인증만 수행 (code만 전송)
+            let payload: [String: Any] = [
+                "code": input.trimmingCharacters(in: .whitespacesAndNewlines)
+            ]
+            print("📤 [Auth] calling verifyAccessCode:", payload)
+
+            functions.httpsCallable("verifyAccessCode").call(payload) { result, error in
+                if let error = error as NSError? {
+                    print("❌ [Auth] verifyAccessCode error:", error.domain, error.code, error.userInfo)
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        self.errorMessage = "유효하지 않은 코드입니다."
+                    }
+                    return
                 }
-                return
-            }
 
-            print("✅ 인증 성공: \(channelId)")
+                guard let dict = result?.data as? [String: Any],
+                      (dict["ok"] as? Bool) == true,
+                      let channelId = dict["channelId"] as? String else {
+                    print("⚠️ [Auth] invalid verify response:", String(describing: result?.data))
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        self.errorMessage = "유효하지 않은 코드입니다."
+                    }
+                    return
+                }
 
-            // 🔐 Keychain 저장
-            let status = KeychainHelper.save("verifiedAccessCode", value: channelId)
-            print("🔐 키체인 저장 결과: \(status == errSecSuccess ? "성공" : "실패(\(status))")")
+                print("✅ [Auth] verify OK, channelId:", channelId)
 
-            // ✅ FCM 토큰 저장
-            if let fcmToken = Messaging.messaging().fcmToken {
-                saveFcmTokenToFirestore(userId: channelId, token: fcmToken)
-            } else {
-                print("⚠️ FCM 토큰이 아직 준비되지 않았습니다.")
-            }
+                // 2) 채널ID 키체인 저장
+                let status = KeychainHelper.save("verifiedAccessCode", value: channelId)
+                print("🔐 [Auth] keychain save:", status == errSecSuccess ? "success" : "fail(\(status))")
 
-            // ✅ 에피소드 초기 동기화
-            recordListViewModel.fetchAndSyncEpisodes(context: modelContext)
+                // 3) 가능한 경우 즉시 디바이스 등록 (토큰이 이미 있다면)
+                Messaging.messaging().token { token, _ in
+                    if let token = token, !token.isEmpty {
+                        let deviceId = DeviceIdManager.getOrCreate()
+                        let regData: [String: Any] = [
+                            "channelId": channelId,
+                            "deviceId": deviceId,
+                            "fcmToken": token,
+                            "platform": "iOS",
+                            "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+                        ]
+                        print("📤 [Auth] calling registerDevice:", regData)
 
-            // ✅ 인증 완료 → MainView로 전환
-            DispatchQueue.main.async {
-                isLoading = false
-                isAuthenticated = true
+                        functions.httpsCallable("registerDevice").call(regData) { regResult, regError in
+                            if let regError = regError {
+                                print("❌ [Auth] registerDevice error:", regError.localizedDescription)
+                            } else {
+                                print("✅ [Auth] registerDevice OK:", regResult?.data as Any)
+                            }
+                        }
+                    } else {
+                        print("ℹ️ [Auth] FCM token not ready yet — will register on delegate callback")
+                    }
+                }
+
+                // 4) 에피소드 초기 동기화 & 화면 전환
+                DispatchQueue.main.async {
+                    self.recordListViewModel.fetchAndSyncEpisodes(context: self.modelContext)
+                    self.isLoading = false
+                    self.isAuthenticated = true
+                }
             }
         }
-    }
 
-    // MARK: - Firestore에 fcmToken 배열 저장
-    func saveFcmTokenToFirestore(userId: String, token: String) {
-        let db = Firestore.firestore()
-        db.collection("users").document(userId).setData([
-            "fcmTokens": FieldValue.arrayUnion([token])
-        ], merge: true) { error in
-            if let error = error {
-                print("❌ Firestore 저장 실패: \(error.localizedDescription)")
-            } else {
-                print("✅ FCM 토큰 Firestore 저장 완료")
+        if Auth.auth().currentUser == nil {
+            Auth.auth().signInAnonymously { _, err in
+                if let err = err {
+                    print("❌ [Auth] anonymous signIn:", err.localizedDescription)
+                } else {
+                    print("✅ [Auth] anonymous signIn success")
+                }
+                proceed()
             }
+        } else {
+            proceed()
         }
     }
 }
