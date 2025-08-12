@@ -296,14 +296,15 @@ struct PlaybackSliderView: View {
     var duration: Double
     @Binding var isDragging: Bool
     var onSeek: (Double) -> Void
-  
     @Binding var displayedTime: Double
-
     @ObservedObject var audioPlayer: AudioPlayerManager
+
+    // ✅ 추가: 트랙 키
+    var trackKey: String
+
     @State private var isDraggingSlider = false
     @State private var internalValue: Double = 0
     @State private var lastSeekTime = Date.distantPast
-
 
     var body: some View {
         VStack(spacing: 6) {
@@ -312,7 +313,6 @@ struct PlaybackSliderView: View {
                 range: 0...max(duration, 1),
                 onEditingChanged: { dragging in
                     isDraggingSlider = dragging
-
                     if !dragging {
                         lastSeekTime = Date()
                         let finalValue = min(max(0, internalValue), max(duration, 0))
@@ -328,11 +328,9 @@ struct PlaybackSliderView: View {
                 anchor: .center
             )
             .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
-            .frame(width: .infinity, height: 24)
+            .frame(maxWidth: .infinity, minHeight: 24)
             .padding(.top, 4)
 
-            
-            // Play 시간
             HStack {
                 Text(formatTime(sanitize(displayedTime)))
                 Spacer()
@@ -342,11 +340,7 @@ struct PlaybackSliderView: View {
             .font(.footnote)
             .monospacedDigit()
             .foregroundColor(.secondary)
-            .frame(width: .infinity)
-            .scaleEffect(
-                CGSize(width: isDraggingSlider ? 1.03 : 1.0, height: isDraggingSlider ? 1.03 : 1.0),
-                anchor: .center
-            )
+            .frame(maxWidth: .infinity)
             .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
             .padding(.horizontal, 2.5)
         }
@@ -356,13 +350,20 @@ struct PlaybackSliderView: View {
         .onChange(of: value) { newValue in
             guard !isDragging else { return }
             guard Date().timeIntervalSince(lastSeekTime) > 0.4 else { return }
-            withAnimation(.linear(duration: 0.4)) {
+            withAnimation(.linear(duration: 0.3)) {
                 if newValue >= duration - 1 {
                     internalValue = duration
                 } else {
                     internalValue = min(newValue, duration * 0.998)
                 }
             }
+        }
+        // ✅ 트랙 바뀌면 내부 상태 강제 리셋
+        .onChange(of: trackKey) { _ in
+            isDragging = false
+            isDraggingSlider = false
+            lastSeekTime = .distantPast
+            internalValue = 0
         }
     }
 
@@ -375,6 +376,7 @@ struct PlaybackSliderView: View {
         return String(format: "%d:%02d", Int(t) / 60, Int(t) % 60)
     }
 }
+
 
 #Preview {
     VStack {

@@ -144,32 +144,39 @@ final class AudioPlayerManager: ObservableObject {
     }
 
     // MARK: - Time Observer
+    
+    private let finishedSubject = PassthroughSubject<Void, Never>()
+    var finishedPublisher: AnyPublisher<Void, Never> {
+        finishedSubject.eraseToAnyPublisher()
+    }
 
     private func addPeriodicTimeObserver() {
-        guard let player = player else { return }
-        removeTimeObserverIfNeeded()
+       guard let player = player else { return }
+       removeTimeObserverIfNeeded()
 
-        // 0.5초 주기로 현재 시간 반영 + NowPlaying 동기화
-        timeObserver = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
-            queue: .main
-        ) { [weak self] time in
-            guard let self else { return }
-            let seconds = safeSeconds(time)
-            self.currentTime = clamp(seconds, lower: 0, upper: self.duration)
-            self.updateNowPlayingTime()
-        }
+       timeObserver = player.addPeriodicTimeObserver(
+           forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
+           queue: .main
+       ) { [weak self] time in
+           guard let self else { return }
+           let seconds = self.safeSeconds(time)
+           self.currentTime = min(max(0, seconds), self.duration)
+           self.updateNowPlayingTime()
+       }
 
-        // 재생 완료 시 상태 업데이트(선택)
-        NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime,
-                                               object: player.currentItem,
-                                               queue: .main) { [weak self] _ in
-            guard let self else { return }
-            self.isPlaying = false
-            self.currentTime = self.duration
-            self.updateNowPlayingTime()
-        }
-    }
+       // ✅ 재생 완료 감지 → 퍼블리시
+       NotificationCenter.default.addObserver(
+           forName: .AVPlayerItemDidPlayToEndTime,
+           object: player.currentItem,
+           queue: .main
+       ) { [weak self] _ in
+           guard let self else { return }
+           self.isPlaying = false
+           self.currentTime = self.duration
+           self.updateNowPlayingTime()
+           self.finishedSubject.send()          // 👈 다음 곡 신호 발행
+       }
+   }
 
     private func removeTimeObserverIfNeeded() {
         if let observer = timeObserver {

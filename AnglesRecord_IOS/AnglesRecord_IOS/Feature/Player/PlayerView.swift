@@ -6,7 +6,7 @@ struct PlayerView: View {
     @State public var record: RecordListModel
     @ObservedObject public var audioPlayer: AudioPlayerManager
     var onDismiss: () -> Void
-    var nextItems: [RecordListModel]
+    @State public var nextItems: [RecordListModel]
 
     @Environment(\.dismiss) var dismiss
     @State private var isDragging = false
@@ -20,18 +20,20 @@ struct PlayerView: View {
 
     @State private var isExpanded = true
     @State private var showPlaylist = false
+    @State private var trackKey: String = ""
 
     @Namespace var animation
 
     private var volumeObserver = SystemVolumeObserver()
 
     public init(record: RecordListModel, audioPlayer: AudioPlayerManager, onDismiss: @escaping () -> Void, nextItems: [RecordListModel]) {
-        _record = State(initialValue: record)
-        self.record = record
-        self.audioPlayer = audioPlayer
-        self.onDismiss = onDismiss
-        self.nextItems = nextItems
-    }
+            _record = State(initialValue: record)
+            self.record = record
+            self.audioPlayer = audioPlayer
+            self.onDismiss = onDismiss
+            self.nextItems = nextItems
+            // 초기 key 설정은 onAppear에서
+        }
 
     public var body: some View {
         ZStack {
@@ -208,21 +210,18 @@ struct PlayerView: View {
                         value: $sliderValue,
                         duration: audioPlayer.duration,
                         isDragging: $isDragging,
-                        onSeek: { newValue in
-                            audioPlayer.seek(to: newValue)
-                        },
+                        onSeek: { newValue in audioPlayer.seek(to: newValue) },
                         displayedTime: $displayedTime,
-                        audioPlayer: audioPlayer
+                        audioPlayer: audioPlayer,
+                        trackKey: trackKey
                     )
+                    .id(trackKey)
                     .onReceive(audioPlayer.$currentTime) { newValue in
-                        let d = max(0, audioPlayer.duration)
-                        let clamped = min(max(0, newValue), d)
-
                         if !isDragging {
                             withAnimation(.linear(duration: 0.2)) {
-                                sliderValue = clamped
+                                sliderValue = newValue
                             }
-                            displayedTime = clamped
+                            displayedTime = newValue
                         }
                     }
                     .padding(.horizontal, 24)
@@ -330,7 +329,22 @@ struct PlayerView: View {
         .animation(.easeOut(duration: 0.2), value: dragOffset)
 //        }
         .background(HiddenSystemVolumeView().frame(width: 0, height: 0))
+        // ✅ 현재 시간 반영
+        .onReceive(audioPlayer.$currentTime) { newValue in
+            if !isDragging {
+                withAnimation(.linear(duration: 0.2)) {
+                    sliderValue = newValue
+                }
+                displayedTime = newValue
+            }
+        }
+
+        // ✅ "끝났음" 이벤트를 받아 다음 곡으로
+        .onReceive(audioPlayer.finishedPublisher) { _ in
+            playNextItemIfAvailable()
+        }
         .onAppear {
+            trackKey = makeTrackKey(from: record)
             volumeObserver.onVolumeChange = { newVolume in
                 DispatchQueue.main.async {
                     self.volume = newVolume
@@ -340,6 +354,32 @@ struct PlayerView: View {
                 }
             }
         }
+    }
+    
+    private func playNextItemIfAvailable() {
+        guard !nextItems.isEmpty else {
+            audioPlayer.stop()
+            return
+        }
+        let next = nextItems.removeFirst()
+        record = next
+        audioPlayer.play(next)
+
+        // ✅ 로컬 상태 싹 초기화
+        withAnimation(.none) {
+            sliderValue = 0
+            displayedTime = 0
+            isDragging = false
+        }
+
+        // ✅ 트랙 키 변경 → 하위 슬라이더 재생성/리셋
+        trackKey = makeTrackKey(from: next)
+    }
+
+    private func makeTrackKey(from r: RecordListModel) -> String {
+        // 고유 키로 title+duration+fileURL 조합 추천 (id가 있으면 id 하나로 충분)
+        let u = r.fileURL?.absoluteString ?? UUID().uuidString
+        return "\(u)#\(Int(r.duration))#\(r.title.hashValue)"
     }
 
     private var dragScale: CGFloat {
@@ -538,3 +578,4 @@ struct PlayerView_Previews: PreviewProvider {
         )
     }
 }
+
