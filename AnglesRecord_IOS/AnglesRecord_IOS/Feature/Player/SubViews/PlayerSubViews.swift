@@ -297,12 +297,12 @@ struct PlaybackSliderView: View {
     @Binding var isDragging: Bool
     var onSeek: (Double) -> Void
   
-  @Binding var displayedTime: Double
+    @Binding var displayedTime: Double
 
-@ObservedObject var audioPlayer: AudioPlayerManager
-@State private var isDraggingSlider = false
-@State private var internalValue: Double = 0
-@State private var lastSeekTime = Date.distantPast
+    @ObservedObject var audioPlayer: AudioPlayerManager
+    @State private var isDraggingSlider = false
+    @State private var internalValue: Double = 0
+    @State private var lastSeekTime = Date.distantPast
 
 
     var body: some View {
@@ -315,7 +315,7 @@ struct PlaybackSliderView: View {
 
                     if !dragging {
                         lastSeekTime = Date()
-                        let finalValue = internalValue
+                        let finalValue = min(max(0, internalValue), max(duration, 0))
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                             onSeek(finalValue)
                         }
@@ -334,10 +334,10 @@ struct PlaybackSliderView: View {
             
             // Play 시간
             HStack {
-
-                Text(formatTime(displayedTime))
+                Text(formatTime(sanitize(displayedTime)))
                 Spacer()
-                Text("-" + formatTime(duration - displayedTime))
+                let remaining = max(0, sanitize(duration) - sanitize(displayedTime))
+                Text("-" + formatTime(remaining))
             }
             .font(.footnote)
             .monospacedDigit()
@@ -366,8 +366,13 @@ struct PlaybackSliderView: View {
         }
     }
 
+    private func sanitize(_ t: Double) -> Double {
+        guard t.isFinite else { return 0 }
+        return max(0, t)
+    }
     private func formatTime(_ time: Double) -> String {
-        String(format: "%d:%02d", Int(time) / 60, Int(time) % 60)
+        let t = max(0, time.rounded(.towardZero))
+        return String(format: "%d:%02d", Int(t) / 60, Int(t) % 60)
     }
 }
 

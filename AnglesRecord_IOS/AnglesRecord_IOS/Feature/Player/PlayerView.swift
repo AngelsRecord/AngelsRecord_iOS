@@ -215,11 +215,14 @@ struct PlayerView: View {
                         audioPlayer: audioPlayer
                     )
                     .onReceive(audioPlayer.$currentTime) { newValue in
+                        let d = max(0, audioPlayer.duration)
+                        let clamped = min(max(0, newValue), d)
+
                         if !isDragging {
                             withAnimation(.linear(duration: 0.2)) {
-                                sliderValue = newValue
+                                sliderValue = clamped
                             }
-                            displayedTime = newValue // 시간 표시
+                            displayedTime = clamped
                         }
                     }
                     .padding(.horizontal, 24)
