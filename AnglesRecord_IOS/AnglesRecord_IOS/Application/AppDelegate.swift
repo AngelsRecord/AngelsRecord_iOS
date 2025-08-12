@@ -31,8 +31,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // ✅ Firebase 초기화
         FirebaseApp.configure()
         
-        KeychainHelper.delete("verifiedAccessCode")
-        print("🧹 테스트용 Keychain 삭제 완료")
+//        KeychainHelper.delete("verifiedAccessCode")
+//        print("🧹 테스트용 Keychain 삭제 완료")
 
         // ✅ 오디오 세션
         do {
