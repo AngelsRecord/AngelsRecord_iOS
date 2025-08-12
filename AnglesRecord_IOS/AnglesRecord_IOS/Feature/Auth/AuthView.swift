@@ -28,32 +28,33 @@ struct AuthView: View {
                 .bold()
                 .padding(.trailing, 218)
                 .padding(.top, 74)
-
-            SecureLimitedTextField(text: $code)
-                .frame(height: 64)
-                .padding(.top, 45)
-                .onChange(of: code) { _ in
-                    errorMessage = nil
+            
+            VStack {
+                SecureLimitedTextField(text: $code)
+                    .frame(height: 64)
+                    .padding(.top, 45)
+                    .onChange(of: code) { _ in
+                        errorMessage = nil
+                    }
+                
+                
+                
+                Spacer()
+                
+                ZStack {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { self.endTextEditing() }
                 }
-
-            if isLoading {
-                Text("인증중 ...")
-                    .foregroundColor(.gray)
-                    .font(.system(size: 12))
-            } else if let errorMessage = errorMessage {
-                Text(errorMessage)
-                    .foregroundColor(.red)
-                    .font(.system(size: 12))
+                
+                if isLoading {
+                    Text(" ")
+                        .foregroundColor(.gray)
+                        .font(.system(size: 12))
+                } else if let errorMessage = errorMessage {
+                    ToastMessage()
+                }
             }
-
-            Spacer()
-
-            ZStack {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture { self.endTextEditing() }
-            }
-
             Button(action: {
                 verifyCode(code)
             }) {
