@@ -222,6 +222,7 @@ struct PlayerView: View {
                             displayedTime = newValue // 시간 표시
                         }
                     }
+                    .padding(.horizontal, 24)
 
                     HStack(spacing: 50) {
                         Button {
@@ -263,6 +264,7 @@ struct PlayerView: View {
                     .scaleEffect(isDragging ? 1.0125 : 1.0)
                     .animation(.easeInOut(duration: 0.2), value: isDragging)
                     .padding(.top, 32)
+                    .padding(.horizontal, 24)
 
                     HStack(spacing: 50) {
                         AirPlayButtonView()
