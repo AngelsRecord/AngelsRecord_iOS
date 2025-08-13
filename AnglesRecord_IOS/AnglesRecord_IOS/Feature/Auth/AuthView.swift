@@ -149,9 +149,10 @@ struct AuthView: View {
 
                 // 4) 에피소드 초기 동기화 & 화면 전환
                 DispatchQueue.main.async {
-                    self.recordListViewModel.fetchAndSyncEpisodes(context: self.modelContext)
-                    self.isLoading = false
-                    self.isAuthenticated = true
+                    self.recordListViewModel.fetchAndSyncEpisodes(context: self.modelContext) { ok in
+                        self.isLoading = false
+                        self.isAuthenticated = true
+                    }
                 }
             }
         }

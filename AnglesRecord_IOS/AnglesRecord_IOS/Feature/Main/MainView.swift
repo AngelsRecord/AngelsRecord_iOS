@@ -3,6 +3,12 @@ import FirebaseStorage
 import SwiftData
 import AVFoundation
 
+private func TS() -> String {
+    let f = DateFormatter()
+    f.dateFormat = "HH:mm:ss.SSS"
+    return f.string(from: Date())
+}
+
 struct MainView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) var colorScheme
@@ -38,22 +44,16 @@ struct MainView: View {
                 .padding(.bottom, selectedRecord != nil ? 100 : 20)
             }
             .refreshable {
-                await MainActor.run {
-                    recordListViewModel.fetchAndSyncEpisodes(context: modelContext)
-                    isRefreshing = false
-                }
+                print("🔄 [\(TS())] pull-to-refresh 시작")
+                await refreshNow(trigger: "pull-to-refresh")
             }
 
             if let record = selectedRecord {
                 MiniPlayerView(
                     record: record,
                     audioPlayer: audioPlayer,
-                    onDelete: {
-                        deleteRecord(record)
-                    },
-                    onNextEpisode: {
-                        playNextEpisode()
-                    }
+                    onDelete: { deleteRecord(record) },
+                    onNextEpisode: { playNextEpisode() }
                 )
                 .onTapGesture { showingPlayerView = true }
                 .fullScreenCover(isPresented: $showingPlayerView) {
@@ -69,9 +69,7 @@ struct MainView: View {
                         PlayerView(
                             record: selected,
                             audioPlayer: audioPlayer,
-                            onDismiss: {
-                                showingPlayerView = false
-                            },
+                            onDismiss: { showingPlayerView = false },
                             nextItems: nextItems
                         )
                     }
@@ -85,7 +83,52 @@ struct MainView: View {
             allowsMultipleSelection: false
         ) { handleFileImport($0) }
         .onAppear {
+            print("👀 [\(TS())] MainView.onAppear")
             loadInitialData()
+        }
+        .onChange(of: shouldFetchNewEpisodes) { newVal in
+            print("🔁 [\(TS())] shouldFetchNewEpisodes 변경: \(newVal)")
+            if newVal {
+                Task { await refreshNow(trigger: "flag-onchange") }
+            }
+        }
+    }
+
+    // MARK: - 새로고침 (completion 기반으로 정확히 대기)
+    private func refreshNow(trigger: String) async {
+        guard !isRefreshing else {
+            print("⏳ [\(TS())] refreshNow(\(trigger)) SKIP: 이미 진행 중")
+            return
+        }
+        isRefreshing = true
+        print("🚀 [\(TS())] refreshNow 시작 by \(trigger)")
+
+        await withCheckedContinuation { cont in
+            recordListViewModel.fetchAndSyncEpisodes(context: modelContext) { ok in
+                print("🧩 [\(TS())] fetchAndSyncEpisodes 완료 ok=\(ok)")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    cont.resume()
+                }
+            }
+        }
+
+        if shouldFetchNewEpisodes {
+            print("✅ [\(TS())] 자동 새로고침 1회 완료 → 플래그 OFF")
+            shouldFetchNewEpisodes = false
+        }
+
+        isRefreshing = false
+        print("🏁 [\(TS())] refreshNow 종료")
+    }
+
+    // MARK: - 초기 로딩
+    private func loadInitialData() {
+        print("📦 [\(TS())] 로컬 먼저 로드")
+        recordListViewModel.loadLocalEpisodes(context: modelContext)
+
+        if shouldFetchNewEpisodes {
+            print("📥 [\(TS())] 푸시 감지됨 → 자동 동기화")
+            Task { await refreshNow(trigger: "onAppear-flag") }
         }
     }
 
@@ -130,8 +173,8 @@ struct MainView: View {
 
     private var loadingSection: some View {
         VStack(spacing: 20) {
-            ProgressView().scaleEffect(1.2).padding(.top, 40)
-            Text("데이터를 불러오는 중...")
+            Spacer()
+            Text("에피소드 불러오는 중...")
                 .font(Font.SFPro.Regular.s14)
                 .foregroundColor(Color("subText"))
             Spacer()
@@ -175,9 +218,7 @@ struct MainView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture {
-            playEpisode(episode)
-        }
+        .onTapGesture { playEpisode(episode) }
     }
 
     // MARK: - 헬퍼
@@ -187,18 +228,6 @@ struct MainView: View {
         formatter.dateFormat = "M월 d일"
         formatter.locale = Locale(identifier: "ko_KR")
         return formatter.string(from: date)
-    }
-
-    private func loadInitialData() {
-        // ✅ 로컬 에피소드 먼저 불러오기
-        recordListViewModel.loadLocalEpisodes(context: modelContext)
-
-        // ✅ 푸시 수신 후 자동 동기화
-        if shouldFetchNewEpisodes {
-            print("📥 푸시 감지됨 → 자동 다운로드 시작")
-            recordListViewModel.fetchAndSyncEpisodes(context: modelContext)
-            shouldFetchNewEpisodes = false
-        }
     }
 
     private func playLatestEpisode() {

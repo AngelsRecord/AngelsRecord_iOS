@@ -15,7 +15,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		0981EA4E2E07B62700874A4F /* AnglesRecord_IOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnglesRecord_IOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0981EA4E2E07B62700874A4F /* A'Cast.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "A'Cast.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -54,7 +54,7 @@
 		0981EA4F2E07B62700874A4F /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				0981EA4E2E07B62700874A4F /* AnglesRecord_IOS.app */,
+				0981EA4E2E07B62700874A4F /* A'Cast.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -69,9 +69,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		0981EA4D2E07B62700874A4F /* AnglesRecord_IOS */ = {
+		0981EA4D2E07B62700874A4F /* A'Cast */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 0981EA6F2E07B62900874A4F /* Build configuration list for PBXNativeTarget "AnglesRecord_IOS" */;
+			buildConfigurationList = 0981EA6F2E07B62900874A4F /* Build configuration list for PBXNativeTarget "A'Cast" */;
 			buildPhases = (
 				0981EA4A2E07B62700874A4F /* Sources */,
 				0981EA4B2E07B62700874A4F /* Frameworks */,
@@ -84,7 +84,7 @@
 			fileSystemSynchronizedGroups = (
 				0981EA502E07B62700874A4F /* AnglesRecord_IOS */,
 			);
-			name = AnglesRecord_IOS;
+			name = "A'Cast";
 			packageProductDependencies = (
 				0981EA7C2E07B6DD00874A4F /* FirebaseAuth */,
 				0981EA7E2E07B6DD00874A4F /* FirebaseFirestore */,
@@ -93,7 +93,7 @@
 				0996B3302E2F0F2E00B57383 /* FirebaseMessaging */,
 			);
 			productName = AnglesRecord_IOS;
-			productReference = 0981EA4E2E07B62700874A4F /* AnglesRecord_IOS.app */;
+			productReference = 0981EA4E2E07B62700874A4F /* A'Cast.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -128,7 +128,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				0981EA4D2E07B62700874A4F /* AnglesRecord_IOS */,
+				0981EA4D2E07B62700874A4F /* A'Cast */,
 			);
 		};
 /* End PBXProject section */
@@ -296,7 +296,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "TeamAngels.AnglesRecord-IOS";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -330,7 +330,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "TeamAngels.AnglesRecord-IOS";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -355,7 +355,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		0981EA6F2E07B62900874A4F /* Build configuration list for PBXNativeTarget "AnglesRecord_IOS" */ = {
+		0981EA6F2E07B62900874A4F /* Build configuration list for PBXNativeTarget "A'Cast" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0981EA702E07B62900874A4F /* Debug */,
