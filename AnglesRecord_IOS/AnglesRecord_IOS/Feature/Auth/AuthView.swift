@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit  // UIApplication.shared.delegate 사용을 위해 추가 (필요 없어짐, 하지만 유지)
 import FirebaseAuth
 import FirebaseFirestore
 import FirebaseFunctions
@@ -109,6 +110,7 @@ struct AuthView: View {
         let proceed: () -> Void = {
             // 리전은 이 함수 안에서만 명시
             let functions = Functions.functions(region: "asia-northeast3")
+            print("ℹ️ [Auth] Functions 초기화 완료: region=asia-northeast3")  // 로그 추가: Functions 초기화
 
             // 1) 인증만 수행 (code만 전송)
             let payload: [String: Any] = [
@@ -171,6 +173,25 @@ struct AuthView: View {
                 // 4) 에피소드 초기 동기화 & 화면 전환: 다운로드 단계로 전환
                 DispatchQueue.main.async {
                     self.loadingPhase = .downloading  // 인증 성공 후 다운로드 단계로 변경
+                    
+                    // 직접 로컬 알림 스케줄 (AppDelegate 없이 UNUserNotificationCenter 사용)
+                    let content = UNMutableNotificationContent()
+                    content.title = "다운로드 진행 중"
+                    content.body = "음원이 다운로드 중입니다."
+                    content.sound = UNNotificationSound.default
+                    content.categoryIdentifier = "download"  // 플래그 스킵을 위한 카테고리
+                    
+                    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)  // 1초 딜레이
+                    let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+                    
+                    UNUserNotificationCenter.current().add(request) { error in
+                        if let error = error {
+                            print("❌ 로컬 알림 스케줄 실패: \(error.localizedDescription)")
+                        } else {
+                            print("✅ 로컬 알림 스케줄 완료: 다운로드 진행 중")
+                        }
+                    }
+                    
                     self.recordListViewModel.fetchAndSyncEpisodes(context: self.modelContext) { ok in
                         self.loadingPhase = .none
                         self.isAuthenticated = true
