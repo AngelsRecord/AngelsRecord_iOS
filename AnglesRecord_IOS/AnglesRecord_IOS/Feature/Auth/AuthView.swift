@@ -71,7 +71,7 @@ struct AuthView: View {
                     HStack(spacing: 8) {  // 로딩 인디케이터와 텍스트를 가로로 배치
                         ProgressView()  // 동그란 로딩 스피너
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))  // 색상 맞춤 (흰색으로)
-                        Text(loadingPhase == .authenticating ? "인증중..." : "음원 다운로드 중...")
+                        Text(loadingPhase == .authenticating ? "인증중..." : "에피소드 다운로드 중...")
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.buttonText)
                     }
@@ -110,7 +110,6 @@ struct AuthView: View {
         let proceed: () -> Void = {
             // 리전은 이 함수 안에서만 명시
             let functions = Functions.functions(region: "asia-northeast3")
-            print("ℹ️ [Auth] Functions 초기화 완료: region=asia-northeast3")  // 로그 추가: Functions 초기화
 
             // 1) 인증만 수행 (code만 전송)
             let payload: [String: Any] = [
@@ -174,10 +173,10 @@ struct AuthView: View {
                 DispatchQueue.main.async {
                     self.loadingPhase = .downloading  // 인증 성공 후 다운로드 단계로 변경
                     
-                    // 직접 로컬 알림 스케줄 (AppDelegate 없이 UNUserNotificationCenter 사용)
+                    // 직접 로컬 알림 스케줄 (다운로드 시작 알림)
                     let content = UNMutableNotificationContent()
-                    content.title = "다운로드 진행 중"
-                    content.body = "음원이 다운로드 중입니다."
+                    content.title = "A'Cast"
+                    content.body = "백그라운드로 에피소드가 다운로드 중입니다."
                     content.sound = UNNotificationSound.default
                     content.categoryIdentifier = "download"  // 플래그 스킵을 위한 카테고리
                     
@@ -193,6 +192,24 @@ struct AuthView: View {
                     }
                     
                     self.recordListViewModel.fetchAndSyncEpisodes(context: self.modelContext) { ok in
+                        // 다운로드 완료 알림 스케줄
+                        let completionContent = UNMutableNotificationContent()
+                        completionContent.title = "A'Cast"
+                        completionContent.body = "에피소드 다운로드가 끝났습니다. 에피소드를 확인해보세요!"
+                        completionContent.sound = UNNotificationSound.default
+                        completionContent.categoryIdentifier = "download"  // 플래그 스킵을 위한 카테고리
+                        
+                        let completionTrigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)  // 1초 딜레이
+                        let completionRequest = UNNotificationRequest(identifier: UUID().uuidString, content: completionContent, trigger: completionTrigger)
+                        
+                        UNUserNotificationCenter.current().add(completionRequest) { error in
+                            if let error = error {
+                                print("❌ 로컬 알림 스케줄 실패 (완료 알림): \(error.localizedDescription)")
+                            } else {
+                                print("✅ 로컬 알림 스케줄 완료: 다운로드 완료")
+                            }
+                        }
+                        
                         self.loadingPhase = .none
                         self.isAuthenticated = true
                     }
