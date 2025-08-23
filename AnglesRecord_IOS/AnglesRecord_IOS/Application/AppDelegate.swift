@@ -50,6 +50,7 @@ final class PushRegistrationManager {
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    var backgroundCompletionHandler: (() -> Void)? = nil
 
     // 🔔 화면단에서 구독하는 새로고침 트리거
     @AppStorage("shouldFetchNewEpisodes") var shouldFetchNewEpisodes: Bool = false
@@ -397,6 +398,16 @@ extension AppDelegate {
             } else {
                 print("✅ 로컬 알림 스케줄 완료: \(title) - \(body)")
             }
+        }
+    }
+}
+
+// MARK: - Background Download Handler
+extension AppDelegate {
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        print("ℹ️ 백그라운드 URLSession 이벤트 처리: \(identifier)")
+        if identifier == "com.anglesrecord.backgrounddownload" {
+            backgroundCompletionHandler = completionHandler
         }
     }
 }
