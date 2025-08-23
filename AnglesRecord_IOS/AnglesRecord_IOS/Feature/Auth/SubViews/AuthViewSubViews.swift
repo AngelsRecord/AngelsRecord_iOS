@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SecureLimitedTextField: View {
     @Binding var text: String
+    @Binding var isDisabled: Bool  // 새로운 바인딩 추가: 입력 비활성화 여부
     @FocusState private var isFocused: Bool
     
     var isActive: Bool {
@@ -20,7 +21,7 @@ struct SecureLimitedTextField: View {
             // 라벨
             Text("인증 코드 입력")
                 .font(.system(size: 16, weight: .bold))
-                .foregroundColor(isActive ? Color("mainBlue") : Color("subText"))
+                .foregroundColor(isDisabled ? Color("subText") : (isActive ? Color("mainBlue") : Color("subText")))  // 비활성화 시 subText로 변경
                 .offset(y: isActive ? 0 : 20)
                 .scaleEffect(isActive ? 0.8 : 1.2, anchor: .leading)
                 .animation(.easeInOut(duration: 0.2), value: isActive)
@@ -39,6 +40,7 @@ struct SecureLimitedTextField: View {
                             text = String(newValue.prefix(10))
                         }
                     }
+                    .disabled(isDisabled)  // 비활성화 바인딩 적용
                 
                 if !text.isEmpty {
                     Button(action: {
@@ -48,13 +50,14 @@ struct SecureLimitedTextField: View {
                             .foregroundColor(Color("subText"))
                     }
                     .padding(.trailing, 4)
+                    .disabled(isDisabled)  // 클리어 버튼도 비활성화
                 }
             }
             
             // 밑줄
             Rectangle()
                 .frame(height: 2)
-                .foregroundColor(isActive ? Color("mainBlue") : Color("subText"))
+                .foregroundColor(isDisabled ? Color("subText") : (isActive ? Color("mainBlue") : Color("subText")))  // 비활성화 시 subText로 변경
                 .animation(.easeInOut(duration: 0.2), value: isActive)
         }
         .padding(.horizontal, 24)
@@ -67,8 +70,9 @@ struct SecureLimitedTextField: View {
 
 private struct SecureLimitedTextFieldPreviewWrapper: View {
     @State private var inputText: String = ""
+    @State private var isDisabled: Bool = false  // 프리뷰용 더미 바인딩
 
     var body: some View {
-        SecureLimitedTextField(text: $inputText)
+        SecureLimitedTextField(text: $inputText, isDisabled: $isDisabled)
     }
 }

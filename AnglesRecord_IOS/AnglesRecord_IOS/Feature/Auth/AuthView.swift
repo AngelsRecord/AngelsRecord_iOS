@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import UIKit  // UIApplication.shared.delegate 사용을 위해 추가 (필요 없어짐, 하지만 유지)
+import UIKit
 import FirebaseAuth
 import FirebaseFirestore
 import FirebaseFunctions
@@ -24,7 +24,7 @@ struct AuthView: View {
     @State private var code: String = ""
     @State private var isAuthenticated = false
     @State private var errorMessage: String?
-    @State private var loadingPhase: LoadingPhase = .none  // 로딩 단계 상태 변수 추가 (기존 isLoading 대신 사용)
+    @State private var loadingPhase: LoadingPhase = .none
 
     @EnvironmentObject var recordListViewModel: RecordListViewModel
     @Environment(\.modelContext) private var modelContext
@@ -38,7 +38,7 @@ struct AuthView: View {
                 .padding(.top, 74)
             
             VStack {
-                SecureLimitedTextField(text: $code)
+                SecureLimitedTextField(text: $code, isDisabled: .constant(loadingPhase != .none))  // isDisabled 바인딩 전달
                     .frame(height: 64)
                     .padding(.top, 45)
                     .onChange(of: code) { _ in
@@ -176,7 +176,7 @@ struct AuthView: View {
                     // 직접 로컬 알림 스케줄 (다운로드 시작 알림)
                     let content = UNMutableNotificationContent()
                     content.title = "A'Cast"
-                    content.body = "백그라운드로 에피소드가 다운로드 중입니다."
+                    content.body = "에피소드가 백그라운드에서 다운로드 중입니다."
                     content.sound = UNNotificationSound.default
                     content.categoryIdentifier = "download"  // 플래그 스킵을 위한 카테고리
                     
@@ -195,7 +195,7 @@ struct AuthView: View {
                         // 다운로드 완료 알림 스케줄
                         let completionContent = UNMutableNotificationContent()
                         completionContent.title = "A'Cast"
-                        completionContent.body = "에피소드 다운로드가 끝났습니다. 에피소드를 확인해보세요!"
+                        completionContent.body = "에피소드 다운로드가 끝났습니다."
                         completionContent.sound = UNNotificationSound.default
                         completionContent.categoryIdentifier = "download"  // 플래그 스킵을 위한 카테고리
                         
