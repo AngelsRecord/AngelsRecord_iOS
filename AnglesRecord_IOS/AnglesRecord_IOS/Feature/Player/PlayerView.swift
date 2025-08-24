@@ -54,12 +54,14 @@ struct PlayerView: View {
                         Image("mainimage_yet")
                             .resizable()
                             .aspectRatio(1, contentMode: .fit)
+                            .matchedGeometryEffect(id: "coverImage", in: animation)
                             .scaleEffect(isExpanded ? (audioPlayer.isPlaying ? 1.0 : 0.95) : 1.0)
-                            .frame(width: isExpanded ? nil : 60, height: isExpanded ? nil : 60)
-                            .frame(maxWidth: .infinity, alignment: isExpanded ? .center : .leading)
-                            .shadow(radius: 10)
+                            .frame(width: isExpanded ? nil : 60,
+                                    height: isExpanded ? nil : 60)
+                            .frame(maxWidth: isExpanded ? .infinity : 60, alignment: isExpanded ? .center : .leading)
                             .padding(.trailing, isExpanded ? 0 : 12)
                             .padding(.top, 16)
+                            .animation(.spring(), value: isExpanded)
                             .animation(.easeInOut(duration: 0.3), value: audioPlayer.isPlaying)
 
                         if !isExpanded {
