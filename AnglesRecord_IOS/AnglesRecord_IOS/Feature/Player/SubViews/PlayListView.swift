@@ -29,22 +29,6 @@ struct PlayListView: View {
                     .font(.caption)
                     .foregroundColor(.gray)
             }
-
-            Spacer()
-
-            Image(systemName: "line.3.horizontal")
-                .foregroundColor(.gray)
         }
     }
-}
-
-#Preview {
-    PlayListView(
-        record: RecordListModel(
-            title: "녹음 제목 예시",
-            artist: "엔젤스",
-            duration: 180,
-            fileURL: nil
-        )
-    )
 }

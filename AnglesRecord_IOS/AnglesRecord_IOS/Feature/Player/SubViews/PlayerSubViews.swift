@@ -387,22 +387,3 @@ struct PlaybackSliderView: View {
         return String(format: "%d:%02d", Int(t) / 60, Int(t) % 60)
     }
 }
-
-
-#Preview {
-    VStack {
-        Spacer()
-        
-        MiniPlayerView(
-            record: RecordListModel(
-                title: "Ep.1 대나무숲",
-                artist: "6월 22일",
-                duration: 205.0
-            ),
-            audioPlayer: AudioPlayerManager(),
-            onDelete: {},
-            onNextEpisode: {}
-        )
-    }
-    .background(Color.gray.opacity(0.1))
-}

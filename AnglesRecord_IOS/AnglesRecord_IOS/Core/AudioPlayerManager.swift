@@ -4,7 +4,7 @@ import Foundation
 import MediaPlayer
 import UIKit // ✅ 앨범 아트 UIImage 사용
 
-final class AudioPlayerManager: ObservableObject {
+final class AudioPlayerManager: NSObject,ObservableObject {
     // MARK: - Private
     private var player: AVPlayer?
     private var timeObserver: Any?
@@ -22,6 +22,10 @@ final class AudioPlayerManager: ObservableObject {
 
     // MARK: - State
     var currentRecord: RecordListModel?
+    
+    var onNextTrack: (() -> Void)?
+    var onPrevTrack: (() -> Void)?
+
 
     // MARK: - Public API
 
@@ -230,6 +234,7 @@ final class AudioPlayerManager: ObservableObject {
 
         let cc = MPRemoteCommandCenter.shared()
 
+        // ▶︎/⏸: 토글 기반 (play(record:)나 pause() 호출 X)
         cc.playCommand.isEnabled = true
         cc.playCommand.addTarget { [weak self] _ in
             guard let self else { return .commandFailed }
@@ -244,6 +249,20 @@ final class AudioPlayerManager: ObservableObject {
             return .success
         }
 
+        // ⏮︎/⏭︎: 큐로 연결 (없으면 무시/정지)
+        cc.previousTrackCommand.isEnabled = true
+        cc.previousTrackCommand.addTarget { [weak self] _ in
+            self?.onPrevTrack?()
+            return .success
+        }
+
+        cc.nextTrackCommand.isEnabled = true
+        cc.nextTrackCommand.addTarget { [weak self] _ in
+            self?.onNextTrack?()
+            return .success
+        }
+
+        // ⏪ 15s / ⏩ 30s
         cc.skipBackwardCommand.isEnabled = true
         cc.skipBackwardCommand.preferredIntervals = [15]
         cc.skipBackwardCommand.addTarget { [weak self] _ in
@@ -256,6 +275,7 @@ final class AudioPlayerManager: ObservableObject {
             self?.skip(seconds: 30); return .success
         }
 
+        // 시크(타임슬라이더)
         cc.changePlaybackPositionCommand.isEnabled = true
         cc.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let self,
