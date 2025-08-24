@@ -179,6 +179,7 @@ private extension UIImage {
 struct MiniPlayerView: View {
     let record: RecordListModel
     @ObservedObject var audioPlayer: AudioPlayerManager
+    @State private var playButtonScale: CGFloat = 1.0
     let onDelete: () -> Void
     let onNextEpisode: () -> Void
 
@@ -197,8 +198,9 @@ struct MiniPlayerView: View {
                     .font(Font.SFPro.Medium.s16)
                     .foregroundColor(.mainText)
                     .lineLimit(1)
+                    .contentTransition(.identity)
                 
-                Text(formattedDate(record.addedDate))
+                Text(record.formattedDate)
                     .font(Font.SFPro.Medium.s14)
                     .foregroundColor(.subText)
                     .lineLimit(1)
@@ -208,12 +210,21 @@ struct MiniPlayerView: View {
             
             HStack(spacing: 8) {
                 // 재생/일시정지 버튼
-                Button(action: {
-                    audioPlayer.togglePlayPause()
-                }) {
+                Button {
+                    withAnimation(.easeIn(duration: 0.1)) {
+                        playButtonScale = 0.8
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        audioPlayer.togglePlayPause()
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) {
+                            playButtonScale = 1.0
+                        }
+                    }
+                } label: {
                     Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 20))
                         .foregroundColor(.primary)
+                        .scaleEffect(playButtonScale)
                         .frame(width: 44, height: 44)
                 }
                 
