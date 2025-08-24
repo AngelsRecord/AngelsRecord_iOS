@@ -391,12 +391,33 @@ struct PlayerView: View {
 
     private func playlistItemButton(for item: RecordListModel) -> some View {
         Button(action: {
+            // 전체 리스트 (현재 곡 + 큐)
+            var all = [record] + nextItems
+
+            // 선택한 아이템의 인덱스를 찾고, 그 뒤를 새 큐로 사용
+            if let idx = all.firstIndex(where: { $0.id == item.id }) {
+                let tail = Array(all.suffix(from: idx + 1))
+                self.nextItems = tail
+            } else {
+                // 혹시 못 찾으면 안전하게 현재 아이템을 제외한 나머지를 큐로
+                self.nextItems = all.filter { $0.id != item.id }
+            }
+
+            // 실제 재생 전환
             self.audioPlayer.stop()
             if let url = item.fileURL {
                 self.audioPlayer.prepareToPlay(url: url)
                 self.audioPlayer.play(item)
             }
             self.record = item
+
+            // ✅ 로컬 상태 리셋 + 트랙키 갱신(슬라이더 초기화)
+            withAnimation(.none) {
+                sliderValue = 0
+                displayedTime = 0
+                isDragging = false
+            }
+            trackKey = makeTrackKey(from: item)
         }) {
             PlayListView(record: item)
         }
