@@ -27,10 +27,6 @@ struct MainView: View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 VStack(spacing: 0) {
-                    if isRefreshing {
-                        ProgressView().padding(.vertical, 12)
-                    }
-
                     podcastMainSection
 
                     Divider().padding(.horizontal)
