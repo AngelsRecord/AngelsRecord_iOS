@@ -72,7 +72,6 @@ final class AudioPlayerManager: ObservableObject {
             player.play()
             player.rate = playbackRate
         }
-        // ✅ rate/elapsed NowPlaying 동기화
         updateNowPlayingTime()
     }
 
@@ -84,7 +83,6 @@ final class AudioPlayerManager: ObservableObject {
         isPlaying = false
         currentTime = 0
         duration = 1
-        // ✅ NowPlaying도 멈춤 표시
         updateNowPlayingTime()
     }
 
@@ -164,7 +162,6 @@ final class AudioPlayerManager: ObservableObject {
            self.updateNowPlayingTime()
        }
 
-       // ✅ 재생 완료 감지 → 퍼블리시
        NotificationCenter.default.addObserver(
            forName: .AVPlayerItemDidPlayToEndTime,
            object: player.currentItem,
@@ -174,7 +171,7 @@ final class AudioPlayerManager: ObservableObject {
            self.isPlaying = false
            self.currentTime = self.duration
            self.updateNowPlayingTime()
-           self.finishedSubject.send()          // 👈 다음 곡 신호 발행
+           self.finishedSubject.send()
        }
    }
 

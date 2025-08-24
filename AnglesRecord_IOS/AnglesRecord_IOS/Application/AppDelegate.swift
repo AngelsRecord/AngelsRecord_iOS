@@ -50,6 +50,7 @@ final class PushRegistrationManager {
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    var backgroundCompletionHandler: (() -> Void)? = nil
 
     // 🔔 화면단에서 구독하는 새로고침 트리거
     @AppStorage("shouldFetchNewEpisodes") var shouldFetchNewEpisodes: Bool = false
@@ -187,6 +188,7 @@ extension AppDelegate {
     fileprivate func checkAndSetupPushFlow(after delay: TimeInterval = 0) {
         let work = {
             UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+                print("ℹ️ 알림 권한 상태 확인: \(settings.authorizationStatus.rawValue)")  // 로그 추가: 권한 상태 (0: notDetermined, 1: denied, 2: authorized)
                 guard let self = self else { return }
                 switch settings.authorizationStatus {
                 case .notDetermined:
@@ -322,9 +324,14 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        shouldFetchNewEpisodes = true
-        UserDefaults.standard.set(Date(), forKey: lastPushAtKey)
-        print("🔔 Foreground 알림 수신 → 다운로드 플래그 ON")
+        // 다운로드 관련 알림인지 체크 (categoryIdentifier로 구분)
+        if notification.request.content.categoryIdentifier != "download" {
+            shouldFetchNewEpisodes = true
+            UserDefaults.standard.set(Date(), forKey: lastPushAtKey)
+            print("🔔 Foreground 알림 수신 → 다운로드 플래그 ON")
+        } else {
+            print("🔔 Foreground 다운로드 알림 수신 → 플래그 스킵")
+        }
         completionHandler([.banner, .sound, .badge])
     }
 
@@ -332,9 +339,13 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        shouldFetchNewEpisodes = true
-        UserDefaults.standard.set(Date(), forKey: lastPushAtKey)
-        print("👉 알림 클릭됨 → 다운로드 플래그 ON")
+        if response.notification.request.content.categoryIdentifier != "download" {
+            shouldFetchNewEpisodes = true
+            UserDefaults.standard.set(Date(), forKey: lastPushAtKey)
+            print("👉 알림 클릭됨 → 다운로드 플래그 ON")
+        } else {
+            print("👉 다운로드 알림 클릭됨 → 플래그 스킵")
+        }
         completionHandler()
     }
 }
@@ -363,5 +374,37 @@ extension AppDelegate: MessagingDelegate {
 private extension UIWindowScene {
     var keyWindow: UIWindow? {
         return self.windows.first(where: { $0.isKeyWindow })
+    }
+}
+
+// MARK: - Local Notification Helpers
+extension AppDelegate {
+    func scheduleLocalNotification(title: String, body: String, delay: TimeInterval = 0, category: String = "") {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = UNNotificationSound.default
+        content.categoryIdentifier = category  // 카테고리 설정
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(delay, 1), repeats: false)  // 최소 1초 딜레이
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("❌ 로컬 알림 스케줄 실패: \(error.localizedDescription)")
+            } else {
+                print("✅ 로컬 알림 스케줄 완료: \(title) - \(body)")
+            }
+        }
+    }
+}
+
+// MARK: - Background Download Handler
+extension AppDelegate {
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        print("ℹ️ 백그라운드 URLSession 이벤트 처리: \(identifier)")
+        if identifier == "com.anglesrecord.backgrounddownload" {
+            backgroundCompletionHandler = completionHandler
+        }
     }
 }

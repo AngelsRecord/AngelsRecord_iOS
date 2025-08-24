@@ -17,9 +17,20 @@ private func TS() -> String {
     return f.string(from: Date())
 }
 
-class RecordListViewModel: ObservableObject {
+class RecordListViewModel: NSObject, ObservableObject {
     @Published var episodes: [EpisodeModel] = []
     @Published var isLoadingEpisodes: Bool = false
+    
+    // 백그라운드 다운로드를 위한 URLSession
+    private lazy var backgroundSession: URLSession = {
+        let config = URLSessionConfiguration.background(withIdentifier: "com.anglesrecord.backgrounddownload")
+        config.isDiscretionary = true  // 시스템 최적화
+        config.sessionSendsLaunchEvents = true  // 백그라운드에서 앱 깨움
+        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }()
+    
+    // 다운로드 완료 추적을 위한 딕셔너리 (fileName: completion closure)
+    private var downloadCompletions: [String: (Bool) -> Void] = [:]
 
     /// 로컬(SwiftData) 로드
     func loadLocalEpisodes(context: ModelContext) {
@@ -94,7 +105,7 @@ class RecordListViewModel: ObservableObject {
                                 changedCount += 1
                                 // 파일 필요 시 다운로드
                                 group.enter()
-                                self.downloadIfNeeded(fileName: episode.fileName, newerThan: episode.uploadedAt) { _ in
+                                self.downloadIfNeeded(fileName: episode.fileName, newerThan: episode.uploadedAt) { success in
                                     group.leave()
                                 }
                             }
@@ -112,7 +123,7 @@ class RecordListViewModel: ObservableObject {
                             print("🆕 [\(TS())] 신규 저장: \(episode.id)")
 
                             group.enter()
-                            self.downloadIfNeeded(fileName: episode.fileName, newerThan: episode.uploadedAt) { _ in
+                            self.downloadIfNeeded(fileName: episode.fileName, newerThan: episode.uploadedAt) { success in
                                 group.leave()
                             }
                         }
@@ -168,15 +179,75 @@ class RecordListViewModel: ObservableObject {
             return
         }
 
+        // Firebase Storage에서 다운로드 URL 얻기
         let ref = Storage.storage().reference().child("audios/\(fileName)")
-        print("⬇️ [\(TS())] 다운로드 시작: \(fileName)")
-        ref.write(toFile: localURL) { url, error in
+        ref.downloadURL { url, error in
             if let error = error {
-                print("❌ [\(TS())] 다운로드 실패: \(error.localizedDescription)")
+                print("❌ [\(TS())] 다운로드 URL 획득 실패: \(error.localizedDescription)")
                 completion(false)
-            } else {
-                print("✅ [\(TS())] 다운로드 완료: \(url?.lastPathComponent ?? fileName)")
+                return
+            }
+            guard let downloadURL = url else {
+                print("⚠️ [\(TS())] 다운로드 URL 없음: \(fileName)")
+                completion(false)
+                return
+            }
+
+            print("⬇️ [\(TS())] 백그라운드 다운로드 시작: \(fileName)")
+            let task = self.backgroundSession.downloadTask(with: downloadURL)
+            task.resume()
+
+            // completion을 delegate에서 호출하기 위해 저장
+            self.downloadCompletions[fileName] = completion
+        }
+    }
+}
+
+// URLSessionDelegate 구현 (백그라운드 다운로드 완료 처리)
+extension RecordListViewModel: URLSessionDelegate, URLSessionDownloadDelegate {
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        guard let originalURL = downloadTask.originalRequest?.url else {
+            print("❌ [\(TS())] 다운로드 완료지만 URL 추출 실패")
+            return
+        }
+        
+        let fileName = originalURL.lastPathComponent
+        
+        if fileName.isEmpty {
+            print("❌ [\(TS())] 파일명 빈 문자열")
+            return
+        }
+        
+        let localURL = getLocalFileURL(for: fileName)
+        
+        do {
+            if FileManager.default.fileExists(atPath: localURL.path) {
+                try FileManager.default.removeItem(at: localURL)
+            }
+            try FileManager.default.moveItem(at: location, to: localURL)
+            print("✅ [\(TS())] 백그라운드 다운로드 완료 & 파일 이동: \(fileName)")
+            
+            // 저장된 completion 호출
+            if let completion = self.downloadCompletions[fileName] {
                 completion(true)
+                self.downloadCompletions.removeValue(forKey: fileName)
+            }
+        } catch {
+            print("❌ [\(TS())] 파일 이동 실패: \(error.localizedDescription)")
+            if let completion = self.downloadCompletions[fileName] {
+                completion(false)
+                self.downloadCompletions.removeValue(forKey: fileName)
+            }
+        }
+    }
+    
+    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        // 백그라운드 세션 완료 시 (모든 task 끝남)
+        print("✅ [\(TS())] 백그라운드 다운로드 세션 완료")
+        DispatchQueue.main.async {
+            if let appDelegate = UIApplication.shared.delegate as? AppDelegate, let handler = appDelegate.backgroundCompletionHandler {
+                handler()
+                appDelegate.backgroundCompletionHandler = nil
             }
         }
     }

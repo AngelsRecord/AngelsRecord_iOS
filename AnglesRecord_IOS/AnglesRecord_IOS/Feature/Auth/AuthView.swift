@@ -6,17 +6,25 @@
 //
 
 import SwiftUI
+import UIKit
 import FirebaseAuth
 import FirebaseFirestore
 import FirebaseFunctions
 import FirebaseMessaging
 import SwiftData
 
+// 로딩 단계를 위한 enum 추가
+enum LoadingPhase {
+    case none
+    case authenticating
+    case downloading
+}
+
 struct AuthView: View {
     @State private var code: String = ""
     @State private var isAuthenticated = false
     @State private var errorMessage: String?
-    @State private var isLoading = false
+    @State private var loadingPhase: LoadingPhase = .none
 
     @EnvironmentObject var recordListViewModel: RecordListViewModel
     @Environment(\.modelContext) private var modelContext
@@ -30,7 +38,7 @@ struct AuthView: View {
                 .padding(.top, 74)
             
             VStack {
-                SecureLimitedTextField(text: $code)
+                SecureLimitedTextField(text: $code, isDisabled: .constant(loadingPhase != .none))  // isDisabled 바인딩 전달
                     .frame(height: 64)
                     .padding(.top, 45)
                     .onChange(of: code) { _ in
@@ -47,7 +55,7 @@ struct AuthView: View {
                         .onTapGesture { self.endTextEditing() }
                 }
                 
-                if isLoading {
+                if loadingPhase != .none {
                     Text(" ")
                         .foregroundColor(.gray)
                         .font(.system(size: 12))
@@ -55,18 +63,32 @@ struct AuthView: View {
                     ToastMessage()
                 }
             }
+            // 수정된 버튼 부분: 로딩 단계에 따라 내용 동적으로 변경
             Button(action: {
                 verifyCode(code)
             }) {
-                Text("시작하기")
-                    .font(.system(size: 16, weight: .bold))
+                if loadingPhase != .none {
+                    HStack(spacing: 8) {  // 로딩 인디케이터와 텍스트를 가로로 배치
+                        ProgressView()  // 동그란 로딩 스피너
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))  // 색상 맞춤 (흰색으로)
+                        Text(loadingPhase == .authenticating ? "인증중..." : "에피소드 다운로드 중...")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.buttonText)
+                    }
                     .frame(width: 353, height: 64)
-                    .foregroundColor(.buttonText)
-                    .background(code.isEmpty ? Color("buttonColor") : Color("mainBlue"))
+                    .background(Color("buttonColor"))  // 로딩 중 비활성화 상태이므로 회색으로
                     .cornerRadius(8)
+                } else {
+                    Text("시작하기")
+                        .font(.system(size: 16, weight: .bold))
+                        .frame(width: 353, height: 64)
+                        .foregroundColor(.buttonText)
+                        .background(code.isEmpty ? Color("buttonColor") : Color("mainBlue"))
+                        .cornerRadius(8)
+                }
             }
             .padding(.bottom, 3)
-            .disabled(isLoading)
+            .disabled(loadingPhase != .none || code.isEmpty)  // 로딩 중이거나 코드 비어 있으면 비활성화
         }
         .onTapGesture {
             self.endTextEditing()
@@ -78,8 +100,8 @@ struct AuthView: View {
 
     /// AuthView 내부에서 호출되는 버튼 액션 함수
     func verifyCode(_ input: String) {
-        // UI 상태
-        isLoading = true
+        // UI 상태: 인증 단계 시작
+        loadingPhase = .authenticating
         errorMessage = nil
 
         print("👉 [Auth] verify tapped:", input)
@@ -99,7 +121,7 @@ struct AuthView: View {
                 if let error = error as NSError? {
                     print("❌ [Auth] verifyAccessCode error:", error.domain, error.code, error.userInfo)
                     DispatchQueue.main.async {
-                        self.isLoading = false
+                        self.loadingPhase = .none
                         self.errorMessage = "유효하지 않은 코드입니다."
                     }
                     return
@@ -110,7 +132,7 @@ struct AuthView: View {
                       let channelId = dict["channelId"] as? String else {
                     print("⚠️ [Auth] invalid verify response:", String(describing: result?.data))
                     DispatchQueue.main.async {
-                        self.isLoading = false
+                        self.loadingPhase = .none
                         self.errorMessage = "유효하지 않은 코드입니다."
                     }
                     return
@@ -147,10 +169,48 @@ struct AuthView: View {
                     }
                 }
 
-                // 4) 에피소드 초기 동기화 & 화면 전환
+                // 4) 에피소드 초기 동기화 & 화면 전환: 다운로드 단계로 전환
                 DispatchQueue.main.async {
+                    self.loadingPhase = .downloading  // 인증 성공 후 다운로드 단계로 변경
+                    
+                    // 직접 로컬 알림 스케줄 (다운로드 시작 알림)
+                    let content = UNMutableNotificationContent()
+                    content.title = "A'Cast"
+                    content.body = "에피소드가 백그라운드에서 다운로드 중입니다."
+                    content.sound = UNNotificationSound.default
+                    content.categoryIdentifier = "download"  // 플래그 스킵을 위한 카테고리
+                    
+                    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)  // 1초 딜레이
+                    let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+                    
+                    UNUserNotificationCenter.current().add(request) { error in
+                        if let error = error {
+                            print("❌ 로컬 알림 스케줄 실패: \(error.localizedDescription)")
+                        } else {
+                            print("✅ 로컬 알림 스케줄 완료: 다운로드 진행 중")
+                        }
+                    }
+                    
                     self.recordListViewModel.fetchAndSyncEpisodes(context: self.modelContext) { ok in
-                        self.isLoading = false
+                        // 다운로드 완료 알림 스케줄
+                        let completionContent = UNMutableNotificationContent()
+                        completionContent.title = "A'Cast"
+                        completionContent.body = "에피소드 다운로드가 끝났습니다."
+                        completionContent.sound = UNNotificationSound.default
+                        completionContent.categoryIdentifier = "download"  // 플래그 스킵을 위한 카테고리
+                        
+                        let completionTrigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)  // 1초 딜레이
+                        let completionRequest = UNNotificationRequest(identifier: UUID().uuidString, content: completionContent, trigger: completionTrigger)
+                        
+                        UNUserNotificationCenter.current().add(completionRequest) { error in
+                            if let error = error {
+                                print("❌ 로컬 알림 스케줄 실패 (완료 알림): \(error.localizedDescription)")
+                            } else {
+                                print("✅ 로컬 알림 스케줄 완료: 다운로드 완료")
+                            }
+                        }
+                        
+                        self.loadingPhase = .none
                         self.isAuthenticated = true
                     }
                 }
