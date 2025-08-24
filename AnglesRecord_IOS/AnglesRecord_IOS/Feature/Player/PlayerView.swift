@@ -346,20 +346,22 @@ struct PlayerView: View {
     }
 
     private func playNextItemIfAvailable() {
+
+
         guard !nextItems.isEmpty else {
-            audioPlayer.stop()
+            audioPlayer.isPlaying = false
             return
         }
         let next = nextItems.removeFirst()
         record = next
         audioPlayer.play(next)
-        // ✅ 로컬 상태 싹 초기화
+ 
         withAnimation(.none) {
             sliderValue = 0
             displayedTime = 0
             isDragging = false
         }
-        // ✅ 트랙 키 변경 → 하위 슬라이더 재생성/리셋
+
         trackKey = makeTrackKey(from: next)
     }
 

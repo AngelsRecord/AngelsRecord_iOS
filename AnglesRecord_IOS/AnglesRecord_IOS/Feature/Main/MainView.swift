@@ -58,19 +58,11 @@ struct MainView: View {
                 .onTapGesture { showingPlayerView = true }
                 .fullScreenCover(isPresented: $showingPlayerView) {
                     if let selected = selectedRecord {
-                        let nextItems = recordListViewModel.episodes
-                            .map { ep in
-                                let url = recordListViewModel.getLocalFileURL(for: ep.fileName)
-                                let duration = CMTimeGetSeconds(AVURLAsset(url: url).duration)
-                                return RecordListModel(title: ep.title, artist: formatted(date: ep.uploadedAt), duration: duration, fileURL: url)
-                            }
-                            .filter { $0.id != selected.id }
-
                         PlayerView(
                             record: selected,
                             audioPlayer: audioPlayer,
                             onDismiss: { showingPlayerView = false },
-                            nextItems: nextItems
+                            nextItems: getNextItems(for: selected)
                         )
                     }
                 }
@@ -221,6 +213,36 @@ struct MainView: View {
     }
 
     // MARK: - 헬퍼
+    
+    private func getNextItems(for selectedRecord: RecordListModel) -> [RecordListModel] {
+ 
+        let currentEpisode = recordListViewModel.episodes.first { ep in
+            let url = recordListViewModel.getLocalFileURL(for: ep.fileName)
+            let record = RecordListModel(title: ep.title, artist: formatted(date: ep.uploadedAt), duration: 0, fileURL: url)
+            return record.id == selectedRecord.id
+        }
+        
+        let sortedEpisodes = recordListViewModel.episodes.sorted { $0.uploadedAt < $1.uploadedAt }
+        let isLastEpisode = currentEpisode?.id == sortedEpisodes.last?.id
+        
+        if isLastEpisode {
+            return []
+        } else {
+            return sortedEpisodes
+                .filter { ep in
+    
+                    if let current = currentEpisode {
+                        return ep.uploadedAt > current.uploadedAt
+                    }
+                    return ep.title != selectedRecord.title // fallback
+                }
+                .map { ep in
+                    let url = recordListViewModel.getLocalFileURL(for: ep.fileName)
+                    let duration = CMTimeGetSeconds(AVURLAsset(url: url).duration)
+                    return RecordListModel(title: ep.title, artist: formatted(date: ep.uploadedAt), duration: duration, fileURL: url)
+                }
+        }
+    }
 
     private func formatted(date: Date) -> String {
         let formatter = DateFormatter()
@@ -300,18 +322,19 @@ struct MainView: View {
             .filter { $0.uploadedAt > currentEpisode.uploadedAt }
             .min(by: { $0.uploadedAt < $1.uploadedAt })
 
-        let episodeToPlay = nextEpisode ?? recordListViewModel.episodes.min(by: { $0.uploadedAt < $1.uploadedAt })
-
-        if let episode = episodeToPlay {
-            playEpisode(episode)
+        guard let episode = nextEpisode else {
+            audioPlayer.stop()
+            selectedRecord = nil
+            return
         }
+        
+        playEpisode(episode)
     }
 
     private func deleteRecord(_ record: RecordListModel) {
         if audioPlayer.currentRecord?.id == record.id {
             audioPlayer.stop()
         }
-
         selectedRecord = nil
 
         if let fileURL = record.fileURL {
