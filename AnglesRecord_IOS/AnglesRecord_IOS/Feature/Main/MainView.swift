@@ -74,7 +74,6 @@ struct MainView: View {
                         )
                     }
                 }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .fileImporter(
