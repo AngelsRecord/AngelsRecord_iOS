@@ -59,20 +59,27 @@ struct MainView: View {
                 .onTapGesture { showingPlayerView = true }
                 .fullScreenCover(isPresented: $showingPlayerView) {
                     if let selected = selectedRecord {
-                        let nextItems = recordListViewModel.episodes
-                            .map { ep in
-                                let url = recordListViewModel.getLocalFileURL(for: ep.fileName)
-                                let duration = CMTimeGetSeconds(AVURLAsset(url: url).duration)
-                                // ✅ 업로드 날짜를 RecordListModel에 전달
-                                return RecordListModel(
-                                    title: ep.title,
-                                    artist: formatted(date: ep.uploadedAt),
-                                    duration: duration,
-                                    fileURL: url,
-                                    uploadedAt: ep.uploadedAt
-                                )
-                            }
-                            .filter { $0.id != selected.id }
+                        // 1) 오름차순(오래된→최신)으로 정렬
+                        let sorted = recordListViewModel.episodes.sorted { $0.uploadedAt < $1.uploadedAt }
+
+                        // 2) 현재 곡의 인덱스 찾기 (title 매칭; 필요시 id 매칭으로 바꿔도 됨)
+                        let currentIdx = sorted.firstIndex(where: { $0.title == selected.title }) ?? 0
+
+                        // 3) 회전: "현재 다음"부터 끝까지 + 처음부터 "현재 전"까지
+                        let rotated = Array(sorted.dropFirst(currentIdx + 1)) + Array(sorted.prefix(currentIdx))
+
+                        // 4) Player 큐로 변환 (+ uploadedAt 보존)
+                        let nextItems = rotated.map { ep -> RecordListModel in
+                            let url = recordListViewModel.getLocalFileURL(for: ep.fileName)
+                            let duration = CMTimeGetSeconds(AVURLAsset(url: url).duration)
+                            return RecordListModel(
+                                title: ep.title,
+                                artist: formatted(date: ep.uploadedAt),
+                                duration: duration,
+                                fileURL: url,
+                                uploadedAt: ep.uploadedAt
+                            )
+                        }
 
                         PlayerView(
                             record: selected,
@@ -82,6 +89,7 @@ struct MainView: View {
                         )
                     }
                 }
+
             }
         }
         .fileImporter(
