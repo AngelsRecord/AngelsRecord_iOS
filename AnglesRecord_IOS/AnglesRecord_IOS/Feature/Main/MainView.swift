@@ -17,8 +17,13 @@ struct MainView: View {
     @StateObject private var audioPlayer = AudioPlayerManager()
     @State private var showingFilePicker = false
     @State private var selectedRecord: RecordListModel?
+
     @AppStorage("isDarkMode") private var isDarkMode = false
     @AppStorage("shouldFetchNewEpisodes") private var shouldFetchNewEpisodes = false
+
+    // ✅ 1회 백필 여부 플래그
+    @AppStorage("didBackfillUploadedAt") private var didBackfillUploadedAt = false
+
     @State private var showingPlayerView = false
     @State private var isLoading = false
     @State private var isRefreshing = false
@@ -58,7 +63,14 @@ struct MainView: View {
                             .map { ep in
                                 let url = recordListViewModel.getLocalFileURL(for: ep.fileName)
                                 let duration = CMTimeGetSeconds(AVURLAsset(url: url).duration)
-                                return RecordListModel(title: ep.title, artist: formatted(date: ep.uploadedAt), duration: duration, fileURL: url)
+                                // ✅ 업로드 날짜를 RecordListModel에 전달
+                                return RecordListModel(
+                                    title: ep.title,
+                                    artist: formatted(date: ep.uploadedAt),
+                                    duration: duration,
+                                    fileURL: url,
+                                    uploadedAt: ep.uploadedAt
+                                )
                             }
                             .filter { $0.id != selected.id }
 
@@ -79,7 +91,17 @@ struct MainView: View {
         ) { handleFileImport($0) }
         .onAppear {
             print("👀 [\(TS())] MainView.onAppear")
-            loadInitialData()
+            // 1) 로컬 먼저
+            recordListViewModel.loadLocalEpisodes(context: modelContext)
+
+            // 2) (필요 시) 1회 백필
+            backfillUploadedAtOnceIfNeeded()
+
+            // 3) 푸시 플래그 감지 시 자동 동기화
+            if shouldFetchNewEpisodes {
+                print("📥 [\(TS())] 푸시 감지됨 → 자동 동기화")
+                Task { await refreshNow(trigger: "onAppear-flag") }
+            }
         }
         .onChange(of: shouldFetchNewEpisodes) { newVal in
             print("🔁 [\(TS())] shouldFetchNewEpisodes 변경: \(newVal)")
@@ -116,14 +138,59 @@ struct MainView: View {
         print("🏁 [\(TS())] refreshNow 종료")
     }
 
-    // MARK: - 초기 로딩
-    private func loadInitialData() {
-        print("📦 [\(TS())] 로컬 먼저 로드")
-        recordListViewModel.loadLocalEpisodes(context: modelContext)
+    // MARK: - 1회 백필
+    /// 기존에 저장된 RecordListModel 중 uploadedAt이 비어있는 항목을 채워줍니다.
+    /// - 우선순위: 파일명 매칭 → 제목 매칭 → 기존 addedDate
+    private func backfillUploadedAtOnceIfNeeded() {
+        guard !didBackfillUploadedAt else {
+            print("↪️ [\(TS())] 백필 스킵: 이미 완료됨")
+            return
+        }
+        print("🛠️ [\(TS())] 백필 시작")
 
-        if shouldFetchNewEpisodes {
-            print("📥 [\(TS())] 푸시 감지됨 → 자동 동기화")
-            Task { await refreshNow(trigger: "onAppear-flag") }
+        do {
+            // 1) 모든 에피소드와 레코드 로드
+            let episodes = try modelContext.fetch(FetchDescriptor<EpisodeModel>())
+            var episodeByFileName: [String: EpisodeModel] = [:]
+            var episodeByTitle: [String: EpisodeModel] = [:]
+            for ep in episodes {
+                episodeByFileName[ep.fileName] = ep
+                episodeByTitle[ep.title] = ep
+            }
+
+            let records = try modelContext.fetch(FetchDescriptor<RecordListModel>())
+            var patched = 0
+
+            for rec in records {
+                // 이미 채워져 있으면 스킵 (모델에 uploadedAt이 Optional이라고 가정)
+                if rec.uploadedAt != nil { continue }
+
+                // 파일명 매칭
+                var matchedDate: Date? = nil
+                if let url = rec.fileURL {
+                    let name = url.lastPathComponent
+                    if let ep = episodeByFileName[name] {
+                        matchedDate = ep.uploadedAt
+                    }
+                }
+
+                // 제목 매칭(보조)
+                if matchedDate == nil, let ep = episodeByTitle[rec.title] {
+                    matchedDate = ep.uploadedAt
+                }
+
+                // 최종 fallback: 기존 추가일
+                rec.uploadedAt = matchedDate ?? rec.addedDate
+                patched += 1
+            }
+
+            try modelContext.save()
+            didBackfillUploadedAt = true
+            print("✅ [\(TS())] 백필 완료: \(patched)건 패치됨")
+
+        } catch {
+            print("❌ [\(TS())] 백필 실패: \(error.localizedDescription)")
+            // 실패해도 앱 동작에는 영향 없도록 플래그는 그대로 둠
         }
     }
 
@@ -235,11 +302,13 @@ struct MainView: View {
         let asset = AVURLAsset(url: localURL)
         let duration = CMTimeGetSeconds(asset.duration)
 
+        // ✅ 플레이용 RecordListModel에도 업로드 날짜를 넣어준다
         let record = RecordListModel(
             title: episode.title,
-            artist: episode.desc,
+            artist: episode.desc, // 미니플레이어에서는 날짜 표시는 formattedDate로 처리
             duration: duration,
-            fileURL: localURL
+            fileURL: localURL,
+            uploadedAt: episode.uploadedAt
         )
 
         withAnimation(.spring()) {
@@ -269,11 +338,13 @@ struct MainView: View {
                 let asset = AVURLAsset(url: destinationURL)
                 let duration = CMTimeGetSeconds(asset.duration)
 
+                // ✅ 로컬로 가져온 파일은 uploadedAt이 없으므로 nil (formattedDate가 addedDate로 표시)
                 let newRecord = RecordListModel(
                     title: url.deletingPathExtension().lastPathComponent,
                     artist: "Unknown Artist",
                     duration: duration,
-                    fileURL: destinationURL
+                    fileURL: destinationURL,
+                    uploadedAt: nil
                 )
 
                 modelContext.insert(newRecord)
@@ -317,8 +388,4 @@ struct MainView: View {
         modelContext.delete(record)
         try? modelContext.save()
     }
-}
-
-#Preview {
-    MainView().environmentObject(RecordListViewModel())
 }

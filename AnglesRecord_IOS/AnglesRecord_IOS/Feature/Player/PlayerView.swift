@@ -107,7 +107,7 @@ struct PlayerView: View {
 
                     if isExpanded {
                         VStack(spacing: 4) {
-                            Text(formattedDate(record.addedDate))
+                            Text(record.formattedDate)
                                 .font(.caption)
                                 .foregroundColor(.subText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -372,13 +372,6 @@ struct PlayerView: View {
         let maxOffset: CGFloat = 300
         let scale = 1 - (min(dragOffset, maxOffset) / maxOffset) * 0.1
         return scale
-    }
-
-    private func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        formatter.locale = Locale(identifier: "en_US")
-        return formatter.string(from: date)
     }
 
     private func startVolumeAnimation() {
