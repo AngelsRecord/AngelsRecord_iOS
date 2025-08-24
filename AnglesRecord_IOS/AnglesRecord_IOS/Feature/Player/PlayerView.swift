@@ -17,6 +17,7 @@ struct PlayerView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var volumeUpdateTimer: Timer?
     @State private var systemVolumeManager = SystemVolumeManager()
+    @State private var playButtonScale: CGFloat = 1.0
 
     @State private var isExpanded = true
     @State private var showPlaylist = false
@@ -27,13 +28,12 @@ struct PlayerView: View {
     private var volumeObserver = SystemVolumeObserver()
 
     public init(record: RecordListModel, audioPlayer: AudioPlayerManager, onDismiss: @escaping () -> Void, nextItems: [RecordListModel]) {
-            _record = State(initialValue: record)
-            self.record = record
-            self.audioPlayer = audioPlayer
-            self.onDismiss = onDismiss
-            self.nextItems = nextItems
-            // 초기 key 설정은 onAppear에서
-        }
+        _record = State(initialValue: record)
+        self.record = record
+        self.audioPlayer = audioPlayer
+        self.onDismiss = onDismiss
+        self.nextItems = nextItems
+    }
 
     public var body: some View {
         ZStack {
@@ -54,19 +54,15 @@ struct PlayerView: View {
                         Image("mainimage_yet")
                             .resizable()
                             .aspectRatio(1, contentMode: .fit)
-                            .matchedGeometryEffect(id: "coverImage", in: animation)
                             .scaleEffect(isExpanded ? (audioPlayer.isPlaying ? 1.0 : 0.95) : 1.0)
-                            .frame(width: isExpanded ? nil : 60,
-                                   height: isExpanded ? nil : 60)
-                            .frame(maxWidth: isExpanded ? .infinity : 60, alignment: isExpanded ? .center : .leading)
-                            .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 16 : 4))
-                            .shadow(radius: isExpanded ? 10 : 0)
+                            .frame(width: isExpanded ? nil : 60, height: isExpanded ? nil : 60)
+                            .frame(maxWidth: .infinity, alignment: isExpanded ? .center : .leading)
+                            .shadow(radius: 10)
                             .padding(.trailing, isExpanded ? 0 : 12)
                             .padding(.top, 16)
-                            .animation(.spring(), value: isExpanded)
                             .animation(.easeInOut(duration: 0.3), value: audioPlayer.isPlaying)
 
-                        if !isExpanded { // 버튼 클릭했을 때
+                        if !isExpanded {
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
                                     MarqueeText(
@@ -105,7 +101,7 @@ struct PlayerView: View {
                             }
                             .padding(.top, 16)
                         }
-                    } // 현재 재생 사진
+                    }
 
                     if isExpanded {
                         VStack(spacing: 4) {
@@ -116,8 +112,6 @@ struct PlayerView: View {
 
                             HStack(alignment: .top) {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    // MARK: - Title
-
                                     MarqueeText(
                                         text: record.title,
                                         font: UIFont.SFPro.SemiBold.s16,
@@ -135,8 +129,6 @@ struct PlayerView: View {
                                 }
 
                                 Spacer()
-
-                                // MARK: - 배속 버튼
 
                                 Menu {
                                     Button("2x") { audioPlayer.setRate(2.0) }
@@ -159,6 +151,7 @@ struct PlayerView: View {
                         .padding(.top, 32)
                     }
                 }
+
                 if showPlaylist {
                     VStack(alignment: .leading, spacing: 0) {
                         HStack {
@@ -236,11 +229,20 @@ struct PlayerView: View {
                         }
 
                         Button {
-                            audioPlayer.togglePlayPause()
+                            withAnimation(.easeIn(duration: 0.1)) {
+                                playButtonScale = 0.8
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                audioPlayer.togglePlayPause()
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) {
+                                    playButtonScale = 1.0
+                                }
+                            }
                         } label: {
                             Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 48))
                                 .foregroundColor(.mainText)
+                                .scaleEffect(playButtonScale)
                         }
 
                         Button {
@@ -273,15 +275,12 @@ struct PlayerView: View {
                             .frame(width: 24, height: 24)
                             .foregroundColor(.mainText)
 
-                        // MARK: - PlayListView
-
                         Button(action: {
                             if isExpanded {
                                 withAnimation(.spring()) {
                                     isExpanded = false
                                     showPlaylist = true
                                 }
-
                             } else {
                                 withAnimation(.spring()) {
                                     showPlaylist = false
@@ -327,19 +326,7 @@ struct PlayerView: View {
                 }
         )
         .animation(.easeOut(duration: 0.2), value: dragOffset)
-//        }
         .background(HiddenSystemVolumeView().frame(width: 0, height: 0))
-        // ✅ 현재 시간 반영
-        .onReceive(audioPlayer.$currentTime) { newValue in
-            if !isDragging {
-                withAnimation(.linear(duration: 0.2)) {
-                    sliderValue = newValue
-                }
-                displayedTime = newValue
-            }
-        }
-
-        // ✅ "끝났음" 이벤트를 받아 다음 곡으로
         .onReceive(audioPlayer.finishedPublisher) { _ in
             playNextItemIfAvailable()
         }
@@ -355,7 +342,7 @@ struct PlayerView: View {
             }
         }
     }
-    
+
     private func playNextItemIfAvailable() {
         guard !nextItems.isEmpty else {
             audioPlayer.stop()
@@ -364,20 +351,17 @@ struct PlayerView: View {
         let next = nextItems.removeFirst()
         record = next
         audioPlayer.play(next)
-
         // ✅ 로컬 상태 싹 초기화
         withAnimation(.none) {
             sliderValue = 0
             displayedTime = 0
             isDragging = false
         }
-
         // ✅ 트랙 키 변경 → 하위 슬라이더 재생성/리셋
         trackKey = makeTrackKey(from: next)
     }
 
     private func makeTrackKey(from r: RecordListModel) -> String {
-        // 고유 키로 title+duration+fileURL 조합 추천 (id가 있으면 id 하나로 충분)
         let u = r.fileURL?.absoluteString ?? UUID().uuidString
         return "\(u)#\(Int(r.duration))#\(r.title.hashValue)"
     }
@@ -390,14 +374,13 @@ struct PlayerView: View {
 
     private func formattedDate(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d" // 예: May 15
-        formatter.locale = Locale(identifier: "en_US") // 영어로 표기
+        formatter.dateFormat = "MMM d"
+        formatter.locale = Locale(identifier: "en_US")
         return formatter.string(from: date)
     }
 
     private func startVolumeAnimation() {
         volumeUpdateTimer?.invalidate()
-
         volumeUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { timer in
             let step: Float = 0.02
             if abs(animatedVolume - volume) < step {
