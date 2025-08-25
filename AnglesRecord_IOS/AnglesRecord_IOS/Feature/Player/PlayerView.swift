@@ -216,7 +216,20 @@ struct PlayerView: View {
                             displayedTime = newValue
                         }
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, 14)
+                    .overlay(alignment: .top) {
+                        LinearGradient(
+                            colors: [
+                                Color.background.opacity(0.0),
+                                Color.background
+                            ],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                        .frame(height: 36)
+                        .offset(y: -36)
+                        .allowsHitTesting(false)
+                        .ignoresSafeArea(edges: .horizontal)
+                    }
 
                     HStack(spacing: 50) {
                         Button {

@@ -150,6 +150,17 @@ struct PlaylistPanelView: View {
         .padding(.horizontal, 24)
         .padding(.top, 37)
         .padding(.bottom, 17)
+        .background(Color.background)
+        .overlay(alignment: .bottom) {
+            LinearGradient(
+                colors: [Color.background, Color.background.opacity(0.0)],
+                startPoint: .top, endPoint: .bottom
+            )
+            .frame(height: 24)
+            .offset(y: 24)
+            .allowsHitTesting(false)
+        }
+        .zIndex(1)
     }
 
     // MARK: - Scroll helpers
