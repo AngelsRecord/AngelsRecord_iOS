@@ -29,6 +29,11 @@ struct MainView: View {
     @State private var isRefreshing = false
 
     var body: some View {
+        ZStack {
+            Color("Background")
+                    .frame(height: 1)
+                    .ignoresSafeArea(edges: .top)
+        }
         ZStack(alignment: .bottom) {
             ScrollView {
                 VStack(spacing: 0) {
