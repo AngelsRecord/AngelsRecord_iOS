@@ -156,8 +156,8 @@ struct PlaylistPanelView: View {
                 colors: [Color.background, Color.background.opacity(0.0)],
                 startPoint: .top, endPoint: .bottom
             )
-            .frame(height: 14)
-            .offset(y: 14)
+            .frame(height: 24)
+            .offset(y: 24)
             .allowsHitTesting(false)
         }
         .zIndex(1)
