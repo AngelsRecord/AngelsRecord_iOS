@@ -182,10 +182,12 @@ struct PlayerView: View {
                         },
                         autoAlignToken: playlistAutoAlignToken
                     )
+                    .padding(.horizontal, -20)
                     .padding(.bottom, 150)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .animation(.spring(), value: showPlaylist)
                 }
+
 
                 Spacer()
             }
