@@ -160,7 +160,7 @@ struct PlaylistPanelView: View {
             let prevId = items[tIdx - 1].id
             proxy.scrollTo(prevId, anchor: .top)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
-                withAnimation(.easeOut(duration: 0.18)) {
+                withAnimation(.easeOut(duration: 0.08)) {
                     proxy.scrollTo(targetId, anchor: .top)
                 }
             }
@@ -263,15 +263,11 @@ struct PlaylistPanelView: View {
 
     private func spacerHeight(baseIndex: Int?) -> CGFloat {
         guard let baseIndex else { return 0 }
-
-        // base 다음부터 남은 개수
         let remain = max(0, items.count - (baseIndex + 1))
         let remainHeight = CGFloat(remain) * rowStride
-
         var extra = panelHeight - remainHeight
         if showPhantomNext {
-            // 마지막일 때는 '빈 한 칸'(=rowStride)까지만
-            extra = min(max(0, extra), rowStride)
+            extra = panelHeight  // Force full panel height to avoid offset clipping
         }
         return max(0, extra)
     }
