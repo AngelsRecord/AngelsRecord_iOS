@@ -10,6 +10,7 @@ final class AudioPlayerManager: NSObject,ObservableObject {
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
     private var didSetupRemoteCommands = false
+    private var statusObservation: AnyCancellable?
 
     // 배속은 NowPlaying rate에도 반영됨
     private var playbackRate: Float = 1.0
@@ -48,6 +49,8 @@ final class AudioPlayerManager: NSObject,ObservableObject {
         let newPlayer = AVPlayer(playerItem: item)
         newPlayer.volume = volume
         player = newPlayer
+        
+        observeTimeControlStatus(of: newPlayer)
 
         // 5) duration 설정 (레코드가 주는 duration 우선)
         let dur = (record.duration > 0) ? record.duration : safeSeconds(item.asset.duration)
@@ -63,6 +66,20 @@ final class AudioPlayerManager: NSObject,ObservableObject {
         player?.play()
         player?.rate = playbackRate // 배속 유지
         updateNowPlayingTime()
+    }
+    
+    private func observeTimeControlStatus(of player: AVPlayer) {
+        // 기존 구독 해제
+        statusObservation?.cancel()
+
+        statusObservation = player.publisher(for: \.timeControlStatus, options: [.initial, .new])
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                guard let self else { return }
+                // 시스템이 멈췄어도 버튼이 맞게 보이도록 동기화
+                self.isPlaying = (status == .playing)
+                self.updateNowPlayingTime()
+            }
     }
 
     /// 일시정지/재생 토글
