@@ -6,9 +6,13 @@ struct PlayerView: View {
     @State public var record: RecordListModel
     @ObservedObject public var audioPlayer: AudioPlayerManager
     var onDismiss: () -> Void
-    @State public var nextItems: [RecordListModel]
+
+    // 전역 재생 큐
+    @EnvironmentObject private var playQueue: PlayQueueManager
 
     @Environment(\.dismiss) var dismiss
+
+    // --- UI State ---
     @State private var isDragging = false
     @State private var sliderValue: Double = 0
     @State private var displayedTime: Double = 0
@@ -22,33 +26,36 @@ struct PlayerView: View {
     @State private var isExpanded = true
     @State private var showPlaylist = false
     @State private var trackKey: String = ""
+    @State private var playlistAutoAlignToken = 0
+
+    // 재정렬 토글
+    @State private var editMode: EditMode = .active
 
     @Namespace var animation
-
     private var volumeObserver = SystemVolumeObserver()
 
-    public init(record: RecordListModel, audioPlayer: AudioPlayerManager, onDismiss: @escaping () -> Void, nextItems: [RecordListModel]) {
+    // MARK: - Init
+    public init(record: RecordListModel, audioPlayer: AudioPlayerManager, onDismiss: @escaping () -> Void) {
         _record = State(initialValue: record)
         self.record = record
         self.audioPlayer = audioPlayer
         self.onDismiss = onDismiss
-        self.nextItems = nextItems
     }
 
+    // MARK: - Body
     public var body: some View {
         ZStack {
-            Color.black.opacity(0.001)
-                .ignoresSafeArea()
+            Color.black.opacity(0.001).ignoresSafeArea()
 
             VStack(spacing: 0) {
+                // 핸들
                 Capsule()
                     .frame(width: 40, height: 5)
                     .foregroundColor(.gray)
                     .padding(.top, 10)
                     .padding(.bottom, 10)
 
-                // MARK: - 현재 재생 Card
-
+                // MARK: - 현재 재생 카드
                 VStack(spacing: 0) {
                     HStack(alignment: .top, spacing: 0) {
                         Image("mainimage_yet")
@@ -57,8 +64,9 @@ struct PlayerView: View {
                             .matchedGeometryEffect(id: "coverImage", in: animation)
                             .scaleEffect(isExpanded ? (audioPlayer.isPlaying ? 1.0 : 0.95) : 1.0)
                             .frame(width: isExpanded ? nil : 60,
-                                    height: isExpanded ? nil : 60)
-                            .frame(maxWidth: isExpanded ? .infinity : 60, alignment: isExpanded ? .center : .leading)
+                                   height: isExpanded ? nil : 60)
+                            .frame(maxWidth: isExpanded ? .infinity : 60,
+                                   alignment: isExpanded ? .center : .leading)
                             .padding(.trailing, isExpanded ? 0 : 12)
                             .padding(.top, 16)
                             .animation(.spring(), value: isExpanded)
@@ -107,6 +115,7 @@ struct PlayerView: View {
 
                     if isExpanded {
                         VStack(spacing: 4) {
+                            // 날짜 표시는 uploadedAt 기반 formattedDate 사용
                             Text(record.formattedDate)
                                 .font(.caption)
                                 .foregroundColor(.subText)
@@ -154,49 +163,37 @@ struct PlayerView: View {
                     }
                 }
 
+                // MARK: - 플리 보이기
                 if showPlaylist {
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack {
-                            Text("재생 목록")
-                                .font(.title3)
-                                .fontWeight(.semibold)
-
-                            Spacer()
-                        }
-                        .padding(.top, 36)
-                        .padding(.bottom, 10)
-
-                        ScrollView {
-                            VStack(spacing: 8) {
-                                ForEach(nextItems) { item in
-                                    playlistItemButton(for: item)
-                                }
-                                Spacer().frame(height: 10)
+                    PlaylistPanelView(
+                        editMode: $editMode,
+                        currentId: playQueue.current?.id,
+                        items: playQueue.items,
+                        onMove: { from, to in playQueue.move(fromOffsets: from, toOffset: to) },
+                        onTap: { tapped in
+                            if let idx = playQueue.items.firstIndex(where: { $0.id == tapped.id }) {
+                                playQueue.setFromRecords(playQueue.items, startAt: idx)
+                                record = tapped
+                                audioPlayer.play(tapped)
+                                trackKey = makeTrackKey(from: tapped)
+                                sliderValue = 0; displayedTime = 0; isDragging = false
+                                playlistAutoAlignToken &+= 1
                             }
-                            .padding(.top, 10)
-                        }
-                        .frame(height: 350)
-                        .overlay(
-                            LinearGradient(
-                                gradient: Gradient(colors: [Color.background.opacity(0.0), Color.background]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .frame(height: 30)
-                            .frame(maxHeight: .infinity, alignment: .bottom)
-                        )
-                    }
+                        },
+                        autoAlignToken: playlistAutoAlignToken
+                    )
+                    .padding(.horizontal, -20)
                     .padding(.bottom, 150)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .animation(.spring(), value: showPlaylist)
                 }
+
 
                 Spacer()
             }
             .padding(.horizontal, 24)
 
             // MARK: - 재생 컨트롤 영역
-
             VStack(spacing: 0) {
                 Spacer()
 
@@ -277,22 +274,25 @@ struct PlayerView: View {
                             .frame(width: 24, height: 24)
                             .foregroundColor(.mainText)
 
-                        Button(action: {
-                            if isExpanded {
-                                withAnimation(.spring()) {
-                                    isExpanded = false
-                                    showPlaylist = true
+                        HStack(spacing: 16) {
+                            // 플레이리스트 토글
+                            Button(action: {
+                                if isExpanded {
+                                    withAnimation(.spring()) {
+                                        isExpanded = false
+                                        showPlaylist = true
+                                    }
+                                } else {
+                                    withAnimation(.spring()) {
+                                        showPlaylist = false
+                                        isExpanded = true
+                                    }
                                 }
-                            } else {
-                                withAnimation(.spring()) {
-                                    showPlaylist = false
-                                    isExpanded = true
-                                }
+                            }) {
+                                Image(systemName: "list.bullet")
+                                    .font(.title3)
+                                    .foregroundColor(.mainText)
                             }
-                        }) {
-                            Image(systemName: "list.bullet")
-                                .font(.title3)
-                                .foregroundColor(.mainText)
                         }
                     }
                     .scaleEffect(isDragging ? 1.0125 : 1.0)
@@ -329,40 +329,56 @@ struct PlayerView: View {
         )
         .animation(.easeOut(duration: 0.2), value: dragOffset)
         .background(HiddenSystemVolumeView().frame(width: 0, height: 0))
+        // 트랙 완료 → 큐 기반 다음으로 (없으면 정지)
         .onReceive(audioPlayer.finishedPublisher) { _ in
-            playNextItemIfAvailable()
+            guard playQueue.hasNext else { audioPlayer.stop(); return }
+            playQueue.advance()
+            if let next = playQueue.current {
+                record = next
+                audioPlayer.play(next)
+                trackKey = makeTrackKey(from: next)
+                sliderValue = 0; displayedTime = 0; isDragging = false
+                playlistAutoAlignToken &+= 1
+            }
         }
         .onAppear {
             trackKey = makeTrackKey(from: record)
+
+            // 시스템 볼륨 동기화
             volumeObserver.onVolumeChange = { newVolume in
                 DispatchQueue.main.async {
                     self.volume = newVolume
-                    self.animatedVolume = newVolume // ✅ 슬라이더 동기화
-                    self.audioPlayer.setVolume(newVolume) // ✅ 시스템 볼륨 → audioPlayer 반영
+                    self.animatedVolume = newVolume
+                    self.audioPlayer.setVolume(newVolume)
                     self.startVolumeAnimation()
+                }
+            }
+
+            // 리모콘 next/prev → 큐 연동 (MainView에서도 백업으로 세팅 가능)
+            audioPlayer.onNextTrack = {
+                guard playQueue.hasNext else { audioPlayer.stop(); return }
+                playQueue.advance()
+                if let next = playQueue.current {
+                    record = next
+                    audioPlayer.play(next)
+                    trackKey = makeTrackKey(from: next)
+                    sliderValue = 0; displayedTime = 0; isDragging = false
+                }
+            }
+            audioPlayer.onPrevTrack = {
+                guard playQueue.hasPrev else { return }
+                playQueue.back()
+                if let prev = playQueue.current {
+                    record = prev
+                    audioPlayer.play(prev)
+                    trackKey = makeTrackKey(from: prev)
+                    sliderValue = 0; displayedTime = 0; isDragging = false
                 }
             }
         }
     }
 
-    private func playNextItemIfAvailable() {
-        guard !nextItems.isEmpty else {
-            audioPlayer.stop()
-            return
-        }
-        let next = nextItems.removeFirst()
-        record = next
-        audioPlayer.play(next)
-        // ✅ 로컬 상태 싹 초기화
-        withAnimation(.none) {
-            sliderValue = 0
-            displayedTime = 0
-            isDragging = false
-        }
-        // ✅ 트랙 키 변경 → 하위 슬라이더 재생성/리셋
-        trackKey = makeTrackKey(from: next)
-    }
-
+    // MARK: - Helpers
     private func makeTrackKey(from r: RecordListModel) -> String {
         let u = r.fileURL?.absoluteString ?? UUID().uuidString
         return "\(u)#\(Int(r.duration))#\(r.title.hashValue)"
@@ -387,20 +403,6 @@ struct PlayerView: View {
                 animatedVolume -= step
             }
         }
-    }
-
-    private func playlistItemButton(for item: RecordListModel) -> some View {
-        Button(action: {
-            self.audioPlayer.stop()
-            if let url = item.fileURL {
-                self.audioPlayer.prepareToPlay(url: url)
-                self.audioPlayer.play(item)
-            }
-            self.record = item
-        }) {
-            PlayListView(record: item)
-        }
-        .buttonStyle(PlainButtonStyle())
     }
 }
 
