@@ -31,6 +31,19 @@ struct PlaylistPanelView: View {
     private let panelHeight: CGFloat = 380
     private let rowHeight: CGFloat = 64
 
+    // 인셋/행간(행 stride 계산에 사용)
+    private let rowVInsetTop: CGFloat = -4
+    private let rowVInsetBottom: CGFloat = -4
+    private let interRowSpacing: CGFloat = 0   // .listRowSpacing(0)
+
+    /// 한 행이 실제로 차지하는 stride(높이)
+    private var rowStride: CGFloat {
+        rowHeight + rowVInsetTop + rowVInsetBottom + interRowSpacing
+    }
+
+    /// 마지막일 때 스크롤할 고정 스페이서 ID
+    private let bottomSpacerId = "plist-bottom-spacer"
+
     init(
         editMode: Binding<EditMode>,
         currentId: UUID?,
@@ -58,6 +71,8 @@ struct PlaylistPanelView: View {
                         items: items,
                         currentId: currentId,
                         rowHeight: rowHeight,
+                        rowVInsetTop: rowVInsetTop,
+                        rowVInsetBottom: rowVInsetBottom,
                         onMove: onMove,
                         onTapButton: { item in
                             // 탭 처리
@@ -75,10 +90,12 @@ struct PlaylistPanelView: View {
                                 showPhantomNext = false
                                 stickTopAnimated(proxy: proxy, targetId: target)
                             } else {
-                                // 마지막이면 마지막을 꼭대기 + 한 칸 빈칸
+                                // 마지막이면: 페이크 next 한 칸 표시 + 스페이서로 스크롤
                                 showPhantomNext = true
-                                if let lastId = items.last?.id {
-                                    stickTopAnimated(proxy: proxy, targetId: lastId)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+                                    withAnimation(.easeOut(duration: 0.18)) {
+                                        proxy.scrollTo(bottomSpacerId, anchor: .top)
+                                    }
                                 }
                             }
                         }
@@ -87,15 +104,15 @@ struct PlaylistPanelView: View {
                     // 말미 스페이서 섹션
                     BottomSpacerSection(
                         height: spacerHeight(baseIndex: effectiveBaseIndex()),
-                        rowHeight: rowHeight
+                        idString: showPhantomNext ? bottomSpacerId : nil
                     )
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .scrollIndicators(.hidden)
-                .contentMargins(.horizontal, 0/*, for: .listRow*/)   // 좌우 기본 마진 제거
+                .listRowSpacing(interRowSpacing)
+                .contentMargins(.horizontal, 0) // 좌우 기본 마진 제거
                 .frame(height: panelHeight)
-                .gesture(DragGesture().onChanged { _ in userHasScrolled = true })
 
                 // 초기 정렬
                 .onAppear { initialAlign(proxy: proxy) }
@@ -122,22 +139,22 @@ struct PlaylistPanelView: View {
         .environment(\.editMode, $editMode)
     }
 
-    // MARK: - Header (분리)
+    // MARK: - Header
     private var header: some View {
         HStack {
             Text("다음 재생")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(.primary)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 24)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
+        .padding(.top, 37)
+        .padding(.bottom, 17)
     }
 
-    // MARK: - Scroll helpers (경량)
+    // MARK: - Scroll helpers
 
-    /// 살짝 아래로 스윽: (무애니메이션) 이전행 top → (애니메이션) 타깃 top
+    /// (무애니메이션) 이전행 top → (애니메이션) 타깃 top
     private func stickTopAnimated(proxy: ScrollViewProxy, targetId: UUID) {
         if let tIdx = items.firstIndex(where: { $0.id == targetId }), tIdx > 0 {
             let prevId = items[tIdx - 1].id
@@ -167,8 +184,11 @@ struct PlaylistPanelView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
             if let target = targetNextId() {
                 stickTopAnimated(proxy: proxy, targetId: target)
-            } else if let lastId = items.last?.id {
-                stickTopAnimated(proxy: proxy, targetId: lastId)
+            } else {
+                showPhantomNext = true
+                withAnimation(.easeOut(duration: 0.18)) {
+                    proxy.scrollTo(bottomSpacerId, anchor: .top)
+                }
             }
             didInitialScroll = true
         }
@@ -186,8 +206,11 @@ struct PlaylistPanelView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
             if let target = targetNextId() {
                 stickTopAnimated(proxy: proxy, targetId: target)
-            } else if let lastId = items.last?.id {
-                stickTopAnimated(proxy: proxy, targetId: lastId)
+            } else {
+                showPhantomNext = true
+                withAnimation(.easeOut(duration: 0.18)) {
+                    proxy.scrollTo(bottomSpacerId, anchor: .top)
+                }
             }
         }
     }
@@ -200,8 +223,11 @@ struct PlaylistPanelView: View {
 
         if let target = nextId {
             stickTopAnimated(proxy: proxy, targetId: target)
-        } else if let lastId = items.last?.id {
-            stickTopAnimated(proxy: proxy, targetId: lastId)
+        } else {
+            showPhantomNext = true
+            withAnimation(.easeOut(duration: 0.18)) {
+                proxy.scrollTo(bottomSpacerId, anchor: .top)
+            }
         }
     }
 
@@ -237,14 +263,15 @@ struct PlaylistPanelView: View {
 
     private func spacerHeight(baseIndex: Int?) -> CGFloat {
         guard let baseIndex else { return 0 }
+
         // base 다음부터 남은 개수
         let remain = max(0, items.count - (baseIndex + 1))
-        let remainHeight = CGFloat(remain) * rowHeight
+        let remainHeight = CGFloat(remain) * rowStride
 
         var extra = panelHeight - remainHeight
         if showPhantomNext {
-            // 마지막이면 "빈 한 칸"만 (rowHeight) 보이도록 제한
-            extra = min(max(0, extra), rowHeight)
+            // 마지막일 때는 '빈 한 칸'(=rowStride)까지만
+            extra = min(max(0, extra), rowStride)
         }
         return max(0, extra)
     }
@@ -255,6 +282,8 @@ private struct ItemsSection: View {
     let items: [RecordListModel]
     let currentId: UUID?
     let rowHeight: CGFloat
+    let rowVInsetTop: CGFloat
+    let rowVInsetBottom: CGFloat
     let onMove: (IndexSet, Int) -> Void
     let onTapButton: (RecordListModel) -> Void
 
@@ -266,7 +295,10 @@ private struct ItemsSection: View {
                     .frame(height: rowHeight)
             }
             .buttonStyle(.plain)
-            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .listRowInsets(EdgeInsets(
+                top: rowVInsetTop, leading: 20,
+                bottom: rowVInsetBottom, trailing: 20
+            ))
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .id(item.id)
@@ -278,7 +310,7 @@ private struct ItemsSection: View {
 // MARK: - Bottom Spacer Section (분리)
 private struct BottomSpacerSection: View {
     let height: CGFloat
-    let rowHeight: CGFloat
+    let idString: String?
 
     var body: some View {
         if height > 0.0 {
@@ -287,7 +319,7 @@ private struct BottomSpacerSection: View {
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
-                .id(UUID()) // 안정화를 위해 고유 id
+                .id(idString ?? UUID().uuidString) // 마지막이면 고정 ID로 스크롤
         }
     }
 }
@@ -302,24 +334,20 @@ private struct PlaylistRow: View {
             Image("mainimage_yet")
                 .resizable()
                 .frame(width: 44, height: 44)
-                .cornerRadius(6)
+                .cornerRadius(4)
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
                     .foregroundColor(.primary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 Text(item.formattedDate)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .font(.caption)
+                    .foregroundColor(.gray)
             }
             Spacer(minLength: 8)
         }
         .contentShape(Rectangle())
-        .padding(.vertical, 10)
-        .padding(.horizontal, 4)
-        .background(
-            (isCurrent ? Color.primary.opacity(0.06) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-        )
     }
 }
