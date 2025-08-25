@@ -10,6 +10,7 @@ final class AudioPlayerManager: NSObject,ObservableObject {
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
     private var didSetupRemoteCommands = false
+    private var statusObservation: AnyCancellable?
 
     // 배속은 NowPlaying rate에도 반영됨
     private var playbackRate: Float = 1.0
@@ -31,6 +32,15 @@ final class AudioPlayerManager: NSObject,ObservableObject {
 
     /// 새로운 아이템 재생 시작
     func play(_ record: RecordListModel) {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            // duckOthers/mixWithOthers 쓰지 않는 걸 권장 (외부 미디어 인수인계 방해 가능)
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true) // 이때 우리가 오디오를 잡음
+        } catch {
+            print("AudioSession activate error: \(error)")
+        }
+        
         // 1) 기존 옵저버 제거
         removeTimeObserverIfNeeded()
 
@@ -48,6 +58,8 @@ final class AudioPlayerManager: NSObject,ObservableObject {
         let newPlayer = AVPlayer(playerItem: item)
         newPlayer.volume = volume
         player = newPlayer
+        
+        observeTimeControlStatus(of: newPlayer)
 
         // 5) duration 설정 (레코드가 주는 duration 우선)
         let dur = (record.duration > 0) ? record.duration : safeSeconds(item.asset.duration)
@@ -61,8 +73,78 @@ final class AudioPlayerManager: NSObject,ObservableObject {
         // 7) 재생 시작
         isPlaying = true
         player?.play()
+        registerRemoteCommandsIfNeeded(true)
         player?.rate = playbackRate // 배속 유지
         updateNowPlayingTime()
+    }
+    
+    func pause(releaseToOthers: Bool = true) {
+        player?.pause()
+        isPlaying = false
+        if releaseToOthers { surrenderAudioToOthers() } // 🔑 포인트
+    }
+
+    // ✅ 다른 앱이 재생 시작(인터럽션 .began)했을 때: 즉시 반납
+    @objc private func handleInterruption(_ note: Notification) {
+        guard
+            let info = note.userInfo,
+            let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+            let type = AVAudioSession.InterruptionType(rawValue: raw)
+        else { return }
+
+        switch type {
+        case .began:
+            player?.pause()
+            isPlaying = false
+            surrenderAudioToOthers() // 🔑 포인트
+        case .ended:
+            // 자동 재개 원하면 here에서 setActive(true)+play()
+            break
+        @unknown default: break
+        }
+    }
+
+    // 🔧 세션 반납 + 리모컨 해제
+    private func surrenderAudioToOthers() {
+        let session = AVAudioSession.sharedInstance()
+        // 리모컨이 남아있으면 외부 앱 첫 탭이 우리 쪽으로 먹히는 경우가 있어 제거 권장
+        registerRemoteCommandsIfNeeded(false)
+
+        do {
+            try session.setActive(false, options: [.notifyOthersOnDeactivation])
+            // 이제 외부 앱이 1탭만으로 세션을 즉시 가져갈 수 있음
+        } catch {
+            print("AudioSession deactivate error: \(error)")
+        }
+    }
+    
+    private func registerRemoteCommandsIfNeeded(_ enable: Bool) {
+            let cc = MPRemoteCommandCenter.shared()
+            if enable {
+                // cc.playCommand.addTarget(self, action: #selector(...))
+                // cc.pauseCommand.addTarget(self, action: #selector(...))
+            } else {
+                cc.playCommand.removeTarget(nil)
+                cc.pauseCommand.removeTarget(nil)
+                cc.togglePlayPauseCommand.removeTarget(nil)
+                cc.nextTrackCommand.removeTarget(nil)
+                cc.previousTrackCommand.removeTarget(nil)
+            }
+        }
+
+    
+    private func observeTimeControlStatus(of player: AVPlayer) {
+        // 기존 구독 해제
+        statusObservation?.cancel()
+
+        statusObservation = player.publisher(for: \.timeControlStatus, options: [.initial, .new])
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                guard let self else { return }
+                // 시스템이 멈췄어도 버튼이 맞게 보이도록 동기화
+                self.isPlaying = (status == .playing)
+                self.updateNowPlayingTime()
+            }
     }
 
     /// 일시정지/재생 토글
