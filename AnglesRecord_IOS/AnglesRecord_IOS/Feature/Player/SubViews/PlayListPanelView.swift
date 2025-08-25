@@ -38,7 +38,7 @@ struct PlaylistPanelView: View {
 
     /// 한 행이 실제로 차지하는 stride(높이)
     private var rowStride: CGFloat {
-        rowHeight + rowVInsetTop + rowVInsetBottom + interRowSpacing
+        rowHeight + interRowSpacing  // Corrected: 64. Insets affect content placement, not stride.
     }
 
     /// 마지막일 때 스크롤할 고정 스페이서 ID
@@ -263,13 +263,15 @@ struct PlaylistPanelView: View {
 
     private func spacerHeight(baseIndex: Int?) -> CGFloat {
         guard let baseIndex else { return 0 }
+        // base 다음부터 남은 개수
         let remain = max(0, items.count - (baseIndex + 1))
         let remainHeight = CGFloat(remain) * rowStride
         var extra = panelHeight - remainHeight
         if showPhantomNext {
-            extra = panelHeight  // Force full panel height to avoid offset clipping
+            extra = panelHeight  // Full empty for phantom (remain == 0)
         }
-        return max(0, extra)
+        let minSpacer = panelHeight - rowStride  // Minimum to allow scrolling last to top when remain > 0
+        return max(minSpacer, max(0, extra))
     }
 }
 
