@@ -93,11 +93,11 @@ struct PlayerView: View {
                                 Spacer()
 
                                 Menu {
-                                    Button("2x") { audioPlayer.setRate(2.0) }
-                                    Button("1.75x") { audioPlayer.setRate(1.75) }
-                                    Button("1.5x") { audioPlayer.setRate(1.5) }
-                                    Button("1x") { audioPlayer.setRate(1.0) }
                                     Button("0.75x") { audioPlayer.setRate(0.75) }
+                                    Button("1x") { audioPlayer.setRate(1.0) }
+                                    Button("1.5x") { audioPlayer.setRate(1.5) }
+                                    Button("1.75x") { audioPlayer.setRate(1.75) }
+                                    Button("2x") { audioPlayer.setRate(2.0) }
                                 } label: {
                                     Image(systemName: "ellipsis")
                                         .padding(10)
@@ -216,7 +216,7 @@ struct PlayerView: View {
                             displayedTime = newValue
                         }
                     }
-                    .padding(.horizontal, 14)
+//                    .padding(.horizontal, 14)
                     .overlay(alignment: .top) {
                         LinearGradient(
                             colors: [
