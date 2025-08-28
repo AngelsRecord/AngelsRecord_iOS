@@ -284,7 +284,7 @@ struct VolumeSliderView: View {
 
             Image(systemName: "speaker.wave.3.fill")
         }
-        .frame(width: .infinity)
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -341,6 +341,7 @@ struct PlaybackSliderView: View {
             .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
             .frame(maxWidth: .infinity, minHeight: 24)
             .padding(.top, 4)
+            .padding(.horizontal, 24)
 
             HStack {
                 Text(formatTime(sanitize(displayedTime)))
@@ -353,7 +354,7 @@ struct PlaybackSliderView: View {
             .foregroundColor(.secondary)
             .frame(maxWidth: .infinity)
             .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
-            .padding(.horizontal, 2.5)
+            .padding(.horizontal, 24)
         }
         .onAppear {
             internalValue = value
