@@ -1,5 +1,4 @@
 import SwiftUI
-import FirebaseStorage
 import SwiftData
 import AVFoundation
 
@@ -26,13 +25,14 @@ struct MainView: View {
     @State private var showingPlayerView = false
     @State private var isLoading = false
     @State private var isRefreshing = false
-    
+
     var body: some View {
         ZStack {
             Color("Background")
-                    .frame(height: 1)
-                    .ignoresSafeArea(edges: .top)
+                .frame(height: 1)
+                .ignoresSafeArea(edges: .top)
         }
+
         ZStack(alignment: .bottom) {
             ScrollView {
                 VStack(spacing: 0) {
@@ -127,7 +127,7 @@ struct MainView: View {
     }
 
     // MARK: - 1회 백필
-    /// 기존에 저장된 RecordListModel 중 uploadedAt이 비어있는 항목을 채워줍니다.
+    /// 기존에 저장된 RecordListModel 중 uploadedAt이 비어있는 항목을 채움.
     /// - 우선순위: 파일명 매칭 → 제목 매칭 → 기존 addedDate
     private func backfillUploadedAtOnceIfNeeded() {
         guard !didBackfillUploadedAt else {
@@ -137,7 +137,6 @@ struct MainView: View {
         print("🛠️ [\(TS())] 백필 시작")
 
         do {
-            // 1) 모든 에피소드와 레코드 로드
             let episodes = try modelContext.fetch(FetchDescriptor<EpisodeModel>())
             var episodeByFileName: [String: EpisodeModel] = [:]
             var episodeByTitle: [String: EpisodeModel] = [:]
@@ -150,10 +149,8 @@ struct MainView: View {
             var patched = 0
 
             for rec in records {
-                // 이미 채워져 있으면 스킵 (모델에 uploadedAt이 Optional이라고 가정)
                 if rec.uploadedAt != nil { continue }
 
-                // 파일명 매칭
                 var matchedDate: Date? = nil
                 if let url = rec.fileURL {
                     let name = url.lastPathComponent
@@ -162,12 +159,10 @@ struct MainView: View {
                     }
                 }
 
-                // 제목 매칭(보조)
                 if matchedDate == nil, let ep = episodeByTitle[rec.title] {
                     matchedDate = ep.uploadedAt
                 }
 
-                // 최종 fallback: 기존 추가일
                 rec.uploadedAt = matchedDate ?? rec.addedDate
                 patched += 1
             }
@@ -178,7 +173,6 @@ struct MainView: View {
 
         } catch {
             print("❌ [\(TS())] 백필 실패: \(error.localizedDescription)")
-            // 실패해도 앱 동작에는 영향 없도록 플래그는 그대로 둠
         }
     }
 
@@ -192,7 +186,6 @@ struct MainView: View {
                 .frame(width: 200, height: 200)
                 .cornerRadius(8)
                 .padding(.top, 41)
-                .cornerRadius(8)
 
             Text("전지적 씨팝 시점: 전팝시")
                 .font(Font.SFPro.SemiBold.s16)
@@ -291,7 +284,7 @@ struct MainView: View {
             recordListViewModel.episodes,
             startAt: episode,
             urlFor: { fileName in recordListViewModel.getLocalFileURL(for: fileName) },
-            artistFor: { ep in ep.desc } // 혹은 날짜 표기를 원하면 formatted(date: ep.uploadedAt)
+            artistFor: { ep in ep.desc }
         )
 
         // ② 현재 트랙으로 플레이
@@ -330,13 +323,12 @@ struct MainView: View {
                 let asset = AVURLAsset(url: destinationURL)
                 let duration = CMTimeGetSeconds(asset.duration)
 
-                // ✅ 로컬로 가져온 파일은 uploadedAt이 없으므로 nil (formattedDate가 addedDate로 표시)
                 let newRecord = RecordListModel(
                     title: url.deletingPathExtension().lastPathComponent,
                     artist: "Unknown Artist",
                     duration: duration,
                     fileURL: destinationURL,
-                    uploadedAt: nil
+                    uploadedAt: nil // 로컬 가져온 파일은 업로드일 없음
                 )
 
                 modelContext.insert(newRecord)
