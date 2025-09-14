@@ -25,6 +25,10 @@ struct MainView: View {
     @State private var showingPlayerView = false
     @State private var isLoading = false
     @State private var isRefreshing = false
+    @State private var pendingTapToken: UUID? = nil
+    // 미니플레이어에서 다운로드 상태 감지용(파일명)
+    @State private var miniPlayerEpisodeFileName: String? = nil
+
 
     var body: some View {
         ZStack {
@@ -58,7 +62,8 @@ struct MainView: View {
                     record: record,
                     audioPlayer: audioPlayer,
                     onDelete: { deleteRecord(record) },
-                    onNextEpisode: { playNextEpisode() }
+                    onNextEpisode: { playNextEpisode() },
+                    episodeFileName: miniPlayerEpisodeFileName
                 )
                 .onTapGesture { showingPlayerView = true }
                 .fullScreenCover(isPresented: $showingPlayerView) {
@@ -248,11 +253,19 @@ struct MainView: View {
                 .font(Font.SFPro.SemiBold.s12)
                 .foregroundColor(Color("subText"))
 
-            Text(episode.title)
-                .font(Font.SFPro.SemiBold.s16)
-                .foregroundColor(Color("mainText"))
-                .frame(width: 345, alignment: .leading)
-                .lineLimit(2)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(episode.title)
+                    .font(Font.SFPro.SemiBold.s16)
+                    .foregroundColor(Color("mainText"))
+                    .lineLimit(2)
+
+                if recordListViewModel.isDownloading(fileName: episode.fileName)
+                    || recordListViewModel.isDownloaded(episode) {
+                    ExampleEpDownBadge(episode: episode)
+                        .padding(4)
+                }
+            }
+            .frame(width: 345, alignment: .leading)
 
             Text(episode.desc)
                 .font(Font.SFPro.Regular.s14)
@@ -280,23 +293,35 @@ struct MainView: View {
     
     // Download-if-needed, then play
     private func ensureLocalThenPlay(_ episode: EpisodeModel) {
-        let localURL = recordListViewModel.getLocalFileURL(for: episode.fileName)
-        if needsDownload(localURL, uploadedAt: episode.uploadedAt) {
-            print("⬇️ [\(TS())] onTap → 다운로드 시작: \(episode.fileName)")
-            recordListViewModel.downloadIfNeeded(fileName: episode.fileName, uploadedAt: episode.uploadedAt) { ok in
-                DispatchQueue.main.async {
-                    if ok {
-                        print("✅ [\(TS())] onTap → 다운로드 완료: \(episode.fileName)")
-                        self.playEpisode(episode)
-                    } else {
-                        print("❌ [\(TS())] onTap → 다운로드 실패: \(episode.fileName)")
-                    }
+        // 1) 마지막 탭 토큰 갱신
+        let token = UUID()
+        pendingTapToken = token
+
+        // 2) 미니플레이어 즉시 표시(placeholder)
+        selectedRecord = makeTempRecord(from: episode)
+        miniPlayerEpisodeFileName = episode.fileName  // 미니플레이어에서 다운로드 감지용
+
+        // 3) 필요 시에만 다운로드(24h 규칙은 ViewModel의 shouldDownload가 처리)
+        recordListViewModel.downloadIfNeeded(fileName: episode.fileName, uploadedAt: episode.uploadedAt) { ok in
+            DispatchQueue.main.async {
+                // 4) “마지막 탭”이 아니면 무시 (이전 탭의 콜백)
+                guard self.pendingTapToken == token else {
+                    print("↪︎ stale completion ignored: \(episode.fileName)")
+                    return
+                }
+
+                if ok {
+                    // 5) 마지막 탭이자 다운로드 OK → 재생 시작
+                    self.playEpisode(episode)
+                } else {
+                    // 실패 처리: 로딩을 걷어내거나 알럿 등
+                    // 예) self.selectedRecord = nil
+                    print("❌ download failed: \(episode.fileName)")
                 }
             }
-        } else {
-            self.playEpisode(episode)
         }
     }
+
 
     private func needsDownload(_ localURL: URL, uploadedAt: Date) -> Bool {
         let fm = FileManager.default
@@ -402,4 +427,17 @@ struct MainView: View {
         modelContext.delete(record)
         try? modelContext.save()
     }
+    
+    // 탭 즉시 미니플레이어를 띄우기 위한 임시(비영구) 레코드
+    private func makeTempRecord(from ep: EpisodeModel) -> RecordListModel {
+        // SwiftData에 자동 저장되지 않음(삽입 안 하면 메모리 객체)
+        RecordListModel(
+            title: ep.title,
+            artist: "",          // 필요 시 채워도 OK
+            duration: 0,
+            fileURL: nil,
+            uploadedAt: ep.uploadedAt
+        )
+    }
+
 }

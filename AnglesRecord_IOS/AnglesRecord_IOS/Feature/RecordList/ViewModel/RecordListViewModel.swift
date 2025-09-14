@@ -15,7 +15,11 @@ final class RecordListViewModel: NSObject, ObservableObject {
     @Published var episodes: [EpisodeModel] = []
     @Published var isLoadingEpisodes: Bool = false
     
+    @Published var activeDownloads: Set<String> = []
+    @Published var downloadProgress: [String: Double] = [:]
+    
     private let stalenessThreshold: TimeInterval = 86_400 // 24h
+    private let enableSkipLogs = false
 
     // MARK: - Config (B안: "/$()/" → "//")
     private func read(_ key: String) -> String {
@@ -162,30 +166,51 @@ final class RecordListViewModel: NSObject, ObservableObject {
     }
 
     
+    func isDownloading(fileName: String) -> Bool {
+        activeDownloads.contains(fileName)
+    }
+
+    func progress(for fileName: String) -> Double {
+        downloadProgress[fileName] ?? 0.0
+    }
+
+    func isDownloaded(_ episode: EpisodeModel) -> Bool {
+        let url = getLocalFileURL(for: episode.fileName)
+        return !shouldDownload(to: url, uploadedAt: episode.uploadedAt, log: false)
+    }
+
+    // 실제 다운로드 판단: 여기만 로그ON
     func downloadIfNeeded(fileName: String, uploadedAt: Date, completion: @escaping (Bool) -> Void) {
         let localURL = getLocalFileURL(for: fileName)
-        if shouldDownload(to: localURL, uploadedAt: uploadedAt) {
+        if shouldDownload(to: localURL, uploadedAt: uploadedAt, log: true) {
             downloadOne(fileName: fileName, uploadedAt: uploadedAt, completion: completion)
         } else {
             completion(true)
         }
     }
     
-    private func shouldDownload(to localURL: URL, uploadedAt: Date) -> Bool {
+    private func shouldDownload(to localURL: URL, uploadedAt: Date, log: Bool = false) -> Bool {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: localURL.path) else { return true }
-
-        guard let attr = try? fm.attributesOfItem(atPath: localURL.path),
-              let modified = attr[.modificationDate] as? Date else {
+        guard fm.fileExists(atPath: localURL.path) else {
+            if log { print("⚠️ [\(TS())] 로컬 없음 → 다운로드") }
             return true
         }
 
-        let delta = uploadedAt.timeIntervalSince(modified) // 초 단위
+        guard let attr = try? fm.attributesOfItem(atPath: localURL.path),
+              let modified = attr[.modificationDate] as? Date else {
+            if log { print("⚠️ [\(TS())] 수정일 조회 실패 → 다운로드") }
+            return true
+        }
+
+        let delta = uploadedAt.timeIntervalSince(modified)
+
         if delta >= stalenessThreshold {
-            print("⚠️ [\(TS())] 수정일 비교: local=\(modified) vs up=\(uploadedAt) (Δ=\(Int(delta))s) → 다운로드")
+            if log { print("⚠️ [\(TS())] 수정일 비교: local=\(modified) vs up=\(uploadedAt) (Δ=\(Int(delta))s) → 다운로드") }
             return true
         } else {
-            print("ℹ️ [\(TS())] 수정일 비교: local=\(modified) vs up=\(uploadedAt) (Δ=\(Int(delta))s) → 스킵(24h 미만)")
+            if log && enableSkipLogs {
+                print("ℹ️ [\(TS())] 수정일 비교: local=\(modified) vs up=\(uploadedAt) (Δ=\(Int(delta))s) → 스킵(24h 미만)")
+            }
             return false
         }
     }
@@ -388,36 +413,70 @@ final class RecordListViewModel: NSObject, ObservableObject {
 
 
 
+    /// 단일 파일 다운로드 (Caches → Documents 이동, 수정일 = uploadedAt)
+    /// 진행률은 `downloadProgress[fileName]` (0.0~1.0), 상태는 `activeDownloads`로 브로드캐스트
     private func downloadOne(fileName: String, uploadedAt: Date, completion: @escaping (Bool) -> Void) {
-        // NCPDownloader는 Caches에 저장 → 완료 후 Documents로 이동
+        // 다운로드 시작: 상태 초기화
+        DispatchQueue.main.async {
+            self.activeDownloads.insert(fileName)
+            self.downloadProgress[fileName] = 0.0
+        }
+
+        // NCPDownloader는 Caches에 저장하고, 완료되면 localURL 반환한다고 가정
         downloader.download(fileName: fileName, progress: { frac in
+            // 진행률 반영 (0.0 ~ 1.0)
+            DispatchQueue.main.async {
+                self.downloadProgress[fileName] = frac
+            }
             let p = Int(frac * 100)
             if p % 10 == 0 { print("📊 [\(TS())] 진행률 \(p)%: \(fileName)") }
         }) { result in
             switch result {
             case .failure(let err):
+                DispatchQueue.main.async {
+                    self.activeDownloads.remove(fileName)
+                    self.downloadProgress[fileName] = 0.0
+                }
                 print("❌ [\(TS())] 다운로드 실패: \(fileName), \(err.localizedDescription)")
-                completion(false)
+                DispatchQueue.main.async { completion(false) }
 
             case .success(let out):
                 let finalURL = self.documentsURL(for: fileName)
                 do {
+                    // 기존 파일이 있으면 삭제
                     if FileManager.default.fileExists(atPath: finalURL.path) {
                         try FileManager.default.removeItem(at: finalURL)
                     }
+                    // 상위 폴더 보장
+                    try FileManager.default.createDirectory(at: finalURL.deletingLastPathComponent(),
+                                                            withIntermediateDirectories: true,
+                                                            attributes: nil)
+                    // Caches → Documents 이동
                     try FileManager.default.moveItem(at: out.localURL, to: finalURL)
-                    // 다음 비교를 위해 파일 수정일을 업로드일로 맞춤
+
+                    // 다음 비교를 위해 파일 수정일을 업로드 시각으로 맞춤
                     try FileManager.default.setAttributes(
                         [.modificationDate: uploadedAt],
                         ofItemAtPath: finalURL.path
                     )
+
+                    DispatchQueue.main.async {
+                        self.downloadProgress[fileName] = 1.0
+                        self.activeDownloads.remove(fileName)
+                    }
                     print("✅ [\(TS())] 저장 완료: \(fileName) → Documents")
-                    completion(true)
+                    DispatchQueue.main.async { completion(true) }
+
                 } catch {
-                    print("❌ [\(TS())] 파일 이동 실패: \(fileName), \(error.localizedDescription)")
-                    completion(false)
+                    DispatchQueue.main.async {
+                        self.activeDownloads.remove(fileName)
+                        self.downloadProgress[fileName] = 0.0
+                    }
+                    print("❌ [\(TS())] 파일 이동/속성 설정 실패: \(fileName), \(error.localizedDescription)")
+                    DispatchQueue.main.async { completion(false) }
                 }
             }
         }
     }
+
 }

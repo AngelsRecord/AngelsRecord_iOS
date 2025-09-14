@@ -174,46 +174,70 @@ private extension UIImage {
     }
 }
 
-
-
 struct MiniPlayerView: View {
+    // ✅ 추가: 다운로드 상태 확인용
+    @EnvironmentObject var recordListViewModel: RecordListViewModel
+
     let record: RecordListModel
     @ObservedObject var audioPlayer: AudioPlayerManager
     @State private var playButtonScale: CGFloat = 1.0
     let onDelete: () -> Void
     let onNextEpisode: () -> Void
 
+    // ✅ (선택) 현재 에피소드의 파일명을 넘겨줄 수 있으면 정확도↑
+    //    없으면 record.fileURL?.lastPathComponent로 추정
+    var episodeFileName: String? = nil
+
+    // MARK: - Derived state
+    private var currentFileName: String? {
+        if let episodeFileName { return episodeFileName }
+        return record.fileURL?.lastPathComponent
+    }
+
+    private var isDownloading: Bool {
+        guard let fn = currentFileName else { return false }
+        return recordListViewModel.isDownloading(fileName: fn)
+    }
+
     var body: some View {
         HStack(spacing: 16) {
-        
-            Image("mainimage_yet")
+
+            // ✅ 이미지: 다운로드 중일 땐 tempcover 사용
+            (isDownloading ? Image("tempcover") : Image("mainimage_yet"))
                 .resizable()
                 .scaledToFit()
                 .frame(width: 44, height: 44)
                 .cornerRadius(8)
-            
-            // 제목과 아티스트
+
+            // 제목 + 날짜
             VStack(alignment: .leading, spacing: 4) {
-                Text(record.title)
-                    .font(Font.SFPro.Medium.s16)
-                    .foregroundColor(.mainText)
-                    .lineLimit(1)
-                    .contentTransition(.identity)
-                
-                Text(record.formattedDate)
-                    .font(Font.SFPro.Medium.s14)
-                    .foregroundColor(.subText)
-                    .lineLimit(1)
+                if isDownloading {
+                    // ✅ 다운로드 중 텍스트
+                    Text("로드중...")
+                        .font(Font.SFPro.Medium.s16)
+                        .foregroundColor(.mainText)
+                        .lineLimit(1)
+                        .contentTransition(.identity)
+                } else {
+                    Text(record.title)
+                        .font(Font.SFPro.Medium.s16)
+                        .foregroundColor(.mainText)
+                        .lineLimit(1)
+                        .contentTransition(.identity)
+
+                    Text(record.formattedDate)
+                        .font(Font.SFPro.Medium.s14)
+                        .foregroundColor(.subText)
+                        .lineLimit(1)
+                }
             }
-            
+
             Spacer()
-            
+
             HStack(spacing: 8) {
                 // 재생/일시정지 버튼
                 Button {
-                    withAnimation(.easeIn(duration: 0.1)) {
-                        playButtonScale = 0.8
-                    }
+                    withAnimation(.easeIn(duration: 0.1)) { playButtonScale = 0.8 }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         audioPlayer.togglePlayPause()
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) {
@@ -227,11 +251,9 @@ struct MiniPlayerView: View {
                         .scaleEffect(playButtonScale)
                         .frame(width: 44, height: 44)
                 }
-                
+
                 // 다음곡 버튼
-                Button(action: {
-                    onNextEpisode()
-                }) {
+                Button(action: { onNextEpisode() }) {
                     Image(systemName: "forward.fill")
                         .font(.system(size: 20))
                         .foregroundColor(.primary)
@@ -251,7 +273,7 @@ struct MiniPlayerView: View {
         )
         .padding(.bottom, -40)
     }
-    
+
     private func formattedDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "M월 d일"
@@ -259,6 +281,7 @@ struct MiniPlayerView: View {
         return formatter.string(from: date)
     }
 }
+
 struct VolumeSliderView: View {
     @Binding var volume: Float
     @State private var isDragging = false
