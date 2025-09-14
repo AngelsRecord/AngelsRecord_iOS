@@ -1,6 +1,6 @@
-import SwiftUI
-import SwiftData
 import AVFoundation
+import SwiftData
+import SwiftUI
 
 private func TS() -> String {
     let f = DateFormatter()
@@ -36,6 +36,52 @@ struct MainView: View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 VStack(spacing: 0) {
+                    HStack {
+                        Spacer() // 오른쪽 끝으로 밀기
+                        HStack(spacing: 16) {
+                            Button {
+                                print("⬇️ 다운로드 버튼 tapped")
+                                // 다운로드 동작 구현
+                            } label: {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .resizable()
+                                    .frame(width: 28, height: 28)
+                                    .foregroundColor(Color("subText"))
+                            }
+
+                            Menu {
+                                // 1. 에이캐스트 설정 → 앱 자체 설정 화면
+                                Button("에이캐스트 설정") {
+                                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                                        UIApplication.shared.open(url)
+                                    }
+                                }
+
+                                // 2. 알림 설정 → 앱 알림 화면 (실제로는 앱 설정 화면까지 이동 가능)
+                                Button("알림 설정") {
+                                    let url = URL(string: UIApplication.openNotificationSettingsURLString)!
+                                    UIApplication.shared.open(url)
+                                }
+
+                                Divider()
+
+                                // 3. 문제 리포트 → 커스텀 액션 (아이콘 포함)
+                                Button {
+                                    print("문제 리포트 tapped")
+                                    // TODO: 피드백 화면 or 이메일 열기
+                                } label: {
+                                    Label("문제 리포트", systemImage: "exclamationmark.bubble")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle.fill")
+                                    .resizable()
+                                    .frame(width: 28, height: 28)
+                                    .foregroundColor(Color("subText"))
+                            }
+                        }
+                        .padding(.trailing, 20)
+                    }
+
                     podcastMainSection
 
                     Divider().padding(.horizontal)
@@ -100,6 +146,7 @@ struct MainView: View {
     }
 
     // MARK: - 새로고침 (completion 기반으로 정확히 대기)
+
     private func refreshNow(trigger: String) async {
         guard !isRefreshing else {
             print("⏳ [\(TS())] refreshNow(\(trigger)) SKIP: 이미 진행 중")
@@ -127,6 +174,7 @@ struct MainView: View {
     }
 
     // MARK: - 1회 백필
+
     /// 기존에 저장된 RecordListModel 중 uploadedAt이 비어있는 항목을 채움.
     /// - 우선순위: 파일명 매칭 → 제목 매칭 → 기존 addedDate
     private func backfillUploadedAtOnceIfNeeded() {
