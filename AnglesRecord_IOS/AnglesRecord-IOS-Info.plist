@@ -2,6 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>AWS_ACCESS_KEY</key>
+	<string>$(AWS_ACCESS_KEY)</string>
+	<key>AWS_BUCKET</key>
+	<string>$(AWS_BUCKET)</string>
+	<key>AWS_ENDPOINT</key>
+	<string>$(AWS_ENDPOINT)</string>
+	<key>AWS_REGION</key>
+	<string>$(AWS_REGION)</string>
+	<key>AWS_SECRET_KEY</key>
+	<string>$(AWS_SECRET_KEY)</string>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
 	<key>UIAppFonts</key>
