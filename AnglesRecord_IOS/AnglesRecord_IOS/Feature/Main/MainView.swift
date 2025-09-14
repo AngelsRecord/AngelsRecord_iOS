@@ -71,7 +71,8 @@ struct MainView: View {
                         PlayerView(
                             record: selected,
                             audioPlayer: audioPlayer,
-                            onDismiss: { showingPlayerView = false }
+                            onDismiss: { showingPlayerView = false },
+                            episodeFileName: miniPlayerEpisodeFileName
                         )
                     }
                 }

@@ -25,6 +25,9 @@ class ThickerSlider: UISlider {
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         let point = touch.location(in: self)
         let percentage = max(0, min(1, point.x / bounds.width))
+        // 실제 트랙(rect) 기준으로 퍼센트 계산 (좌우 여백 보정)
+        let track = self.trackRect(forBounds: bounds)
+        let x = max(track.minX, min(point.x, track.maxX))
         let delta = Float(percentage) * (maximumValue - minimumValue)
         let newValue = minimumValue + delta
 
@@ -103,7 +106,19 @@ struct CustomProgressSlider: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: ThickerSlider, context: Context) {
-        uiView.value = Float(value)
+        // 1) duration 범위 동기화
+        let lower = Float(range.lowerBound)
+        let upper = Float(range.upperBound)
+        if uiView.minimumValue != lower || uiView.maximumValue != upper {
+            uiView.minimumValue = lower
+            uiView.maximumValue = max(upper, lower + 0.0001) // upper==lower 방지
+        }
+    
+        // 2) 값 동기화(클램프, 애니메이션 OFF)
+        let clamped = Float(min(max(value, range.lowerBound), range.upperBound))
+        if uiView.value != clamped {
+            uiView.setValue(clamped, animated: false)
+        }
         // Regenerate images on update so appearance changes (Light/Dark) are reflected
         let trackHeight = uiView.trackHeight
         let trackWidth: CGFloat = 12
@@ -213,7 +228,7 @@ struct MiniPlayerView: View {
             VStack(alignment: .leading, spacing: 4) {
                 if isDownloading {
                     // ✅ 다운로드 중 텍스트
-                    Text("로드중...")
+                    Text("로드 중...")
                         .font(Font.SFPro.Medium.s16)
                         .foregroundColor(.mainText)
                         .lineLimit(1)
@@ -326,88 +341,72 @@ struct AirPlayButtonView: UIViewRepresentable {
 }
 
 struct PlaybackSliderView: View {
+    // 현재 위치(초)
     @Binding var value: Double
-    var duration: Double
+    // 총 길이(초)
+    let duration: Double
+    // 드래그 중 여부
     @Binding var isDragging: Bool
-    var onSeek: (Double) -> Void
+    // 드래그 종료 시 호출되는 시킹
+    let onSeek: (Double) -> Void
+    // 좌측 라벨에 보여줄 “지금까지 재생된 시간(초)”
     @Binding var displayedTime: Double
-    @ObservedObject var audioPlayer: AudioPlayerManager
 
-    // ✅ 추가: 트랙 키
-    var trackKey: String
-
-    @State private var isDraggingSlider = false
-    @State private var internalValue: Double = 0
-    @State private var lastSeekTime = Date.distantPast
+    // 필요 시 상위에서 넘겨받는 객체/키 (뷰 리셋용)
+    let audioPlayer: AudioPlayerManager
+    let trackKey: String
 
     var body: some View {
         VStack(spacing: 6) {
+            // 0으로 나눔/범위 0 방지용으로 최소 0.1 보장
+            let safeDuration = max(duration, 0.1)
+
             CustomProgressSlider(
-                value: $internalValue,
-                range: 0...max(duration, 1),
-                onEditingChanged: { dragging in
-                    isDraggingSlider = dragging
-                    if !dragging {
-                        lastSeekTime = Date()
-                        let finalValue = min(max(0, internalValue), max(duration, 0))
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            onSeek(finalValue)
-                        }
+                value: $value,
+                range: 0...safeDuration,
+                onEditingChanged: { editing in
+                    isDragging = editing
+                    if !editing {
+                        // 드래그 끝 → 실제 시킹
+                        onSeek(value)
                     }
                 },
-                isDragging: $isDraggingSlider
+                isDragging: $isDragging
             )
-            .scaleEffect(
-                CGSize(width: isDraggingSlider ? 1.03 : 1.0, height: isDraggingSlider ? 1.15 : 1.0),
-                anchor: .center
-            )
-            .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
-            .frame(maxWidth: .infinity, minHeight: 24)
-            .padding(.top, 4)
-            .padding(.horizontal, 24)
+            .frame(height: 28)
+            // value가 바뀔 때 라벨도 즉시 갱신(드래그 중 실시간 반영 포함)
+            .onChange(of: value) { newVal in
+                displayedTime = clamp(newVal, min: 0, max: safeDuration)
+            }
 
             HStack {
-                Text(formatTime(sanitize(displayedTime)))
+                Text(formatTime(displayedTime))
+                    .font(.caption)
+                    .foregroundColor(.subText)
+                    .monospacedDigit()
+
                 Spacer()
-                let remaining = max(0, sanitize(duration) - sanitize(displayedTime))
-                Text("-" + formatTime(remaining))
-            }
-            .font(.footnote)
-            .monospacedDigit()
-            .foregroundColor(.secondary)
-            .frame(maxWidth: .infinity)
-            .animation(.easeInOut(duration: 0.2), value: isDraggingSlider)
-            .padding(.horizontal, 24)
-        }
-        .onAppear {
-            internalValue = value
-        }
-        .onChange(of: value) { newValue in
-            guard !isDragging else { return }
-            guard Date().timeIntervalSince(lastSeekTime) > 0.4 else { return }
-            withAnimation(.linear(duration: 0.3)) {
-                if newValue >= duration - 1 {
-                    internalValue = duration
-                } else {
-                    internalValue = min(newValue, duration * 0.998)
-                }
+
+                Text(formatTime(safeDuration))
+                    .font(.caption)
+                    .foregroundColor(.subText)
+                    .monospacedDigit()
             }
         }
-        // ✅ 트랙 바뀌면 내부 상태 강제 리셋
-        .onChange(of: trackKey) { _ in
-            isDragging = false
-            isDraggingSlider = false
-            lastSeekTime = .distantPast
-            internalValue = 0
-        }
+        .padding(.horizontal, 24)
+        .id(trackKey)
     }
 
-    private func sanitize(_ t: Double) -> Double {
-        guard t.isFinite else { return 0 }
-        return max(0, t)
+    // MARK: - Helpers
+    private func clamp(_ v: Double, min: Double, max: Double) -> Double {
+        Swift.max(min, Swift.min(v, max))
     }
-    private func formatTime(_ time: Double) -> String {
-        let t = max(0, time.rounded(.towardZero))
-        return String(format: "%d:%02d", Int(t) / 60, Int(t) % 60)
+
+    private func formatTime(_ t: Double) -> String {
+        guard t.isFinite && !t.isNaN else { return "0:00" }
+        let secs = Int(t.rounded())
+        let m = secs / 60
+        let s = secs % 60
+        return String(format: "%d:%02d", m, s)
     }
 }
