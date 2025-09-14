@@ -109,8 +109,8 @@ struct MainView: View {
         print("🚀 [\(TS())] refreshNow 시작 by \(trigger)")
 
         await withCheckedContinuation { cont in
-            recordListViewModel.fetchAndSyncEpisodes(context: modelContext) { ok in
-                print("🧩 [\(TS())] fetchAndSyncEpisodes 완료 ok=\(ok)")
+            recordListViewModel.syncEpisodesMetadataOnly(context: modelContext) { ok in
+                print("🧩 [\(TS())] syncEpisodesMetadataOnly 완료 ok=\(ok)")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     cont.resume()
                 }
