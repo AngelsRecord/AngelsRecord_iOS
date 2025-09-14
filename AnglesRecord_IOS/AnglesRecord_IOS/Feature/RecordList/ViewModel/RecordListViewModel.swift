@@ -14,6 +14,8 @@ final class RecordListViewModel: NSObject, ObservableObject {
     // MARK: - Public State
     @Published var episodes: [EpisodeModel] = []
     @Published var isLoadingEpisodes: Bool = false
+    
+    private let stalenessThreshold: TimeInterval = 86_400 // 24h
 
     // MARK: - Config (B안: "/$()/" → "//")
     private func read(_ key: String) -> String {
@@ -159,19 +161,35 @@ final class RecordListViewModel: NSObject, ObservableObject {
         return documentsURL(for: fileName)
     }
 
+    
+    func downloadIfNeeded(fileName: String, uploadedAt: Date, completion: @escaping (Bool) -> Void) {
+        let localURL = getLocalFileURL(for: fileName)
+        if shouldDownload(to: localURL, uploadedAt: uploadedAt) {
+            downloadOne(fileName: fileName, uploadedAt: uploadedAt, completion: completion)
+        } else {
+            completion(true)
+        }
+    }
+    
     private func shouldDownload(to localURL: URL, uploadedAt: Date) -> Bool {
-        if !FileManager.default.fileExists(atPath: localURL.path) {
-            print("⬇️ [\(TS())] 로컬 없음 → 다운로드 필요: \(localURL.lastPathComponent)")
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: localURL.path) else { return true }
+
+        guard let attr = try? fm.attributesOfItem(atPath: localURL.path),
+              let modified = attr[.modificationDate] as? Date else {
             return true
         }
-        if let attr = try? FileManager.default.attributesOfItem(atPath: localURL.path),
-           let modified = attr[.modificationDate] as? Date {
-            let need = modified < uploadedAt
-            print("\(need ? "⚠️" : "✅") [\(TS())] 수정일 비교: local=\(modified) vs up=\(uploadedAt) → \(need ? "다운로드" : "유지")")
-            return need
+
+        let delta = uploadedAt.timeIntervalSince(modified) // 초 단위
+        if delta >= stalenessThreshold {
+            print("⚠️ [\(TS())] 수정일 비교: local=\(modified) vs up=\(uploadedAt) (Δ=\(Int(delta))s) → 다운로드")
+            return true
+        } else {
+            print("ℹ️ [\(TS())] 수정일 비교: local=\(modified) vs up=\(uploadedAt) (Δ=\(Int(delta))s) → 스킵(24h 미만)")
+            return false
         }
-        return true
     }
+
 
     // MARK: - Serial Download Queue
     private func downloadSequentially(

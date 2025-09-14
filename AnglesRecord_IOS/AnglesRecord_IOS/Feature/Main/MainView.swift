@@ -261,7 +261,7 @@ struct MainView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture { playEpisode(episode) }
+        .onTapGesture { ensureLocalThenPlay(episode) }
     }
 
     // MARK: - 헬퍼
@@ -275,7 +275,37 @@ struct MainView: View {
 
     private func playLatestEpisode() {
         guard let latestEpisode = recordListViewModel.episodes.first else { return }
-        playEpisode(latestEpisode)
+        ensureLocalThenPlay(latestEpisode)
+    }
+    
+    // Download-if-needed, then play
+    private func ensureLocalThenPlay(_ episode: EpisodeModel) {
+        let localURL = recordListViewModel.getLocalFileURL(for: episode.fileName)
+        if needsDownload(localURL, uploadedAt: episode.uploadedAt) {
+            print("⬇️ [\(TS())] onTap → 다운로드 시작: \(episode.fileName)")
+            recordListViewModel.downloadIfNeeded(fileName: episode.fileName, uploadedAt: episode.uploadedAt) { ok in
+                DispatchQueue.main.async {
+                    if ok {
+                        print("✅ [\(TS())] onTap → 다운로드 완료: \(episode.fileName)")
+                        self.playEpisode(episode)
+                    } else {
+                        print("❌ [\(TS())] onTap → 다운로드 실패: \(episode.fileName)")
+                    }
+                }
+            }
+        } else {
+            self.playEpisode(episode)
+        }
+    }
+
+    private func needsDownload(_ localURL: URL, uploadedAt: Date) -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: localURL.path) else { return true }
+        if let attr = try? fm.attributesOfItem(atPath: localURL.path),
+           let modified = attr[.modificationDate] as? Date {
+            return modified < uploadedAt
+        }
+        return true
     }
 
     private func playEpisode(_ episode: EpisodeModel) {
