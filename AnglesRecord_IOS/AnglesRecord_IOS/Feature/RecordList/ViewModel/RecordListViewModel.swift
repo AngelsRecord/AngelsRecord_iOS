@@ -193,6 +193,182 @@ final class RecordListViewModel: NSObject, ObservableObject {
             )
         }
     }
+    
+    // MARK: - Metadata only sync (no audio downloads)
+    func syncEpisodesMetadataOnly(context: ModelContext, completion: @escaping (Bool) -> Void) {
+        print("🛈 [\(TS())] Firestore 메타데이터 동기화 시작 (오디오 다운로드 없음)")
+
+        let db = Firestore.firestore()
+        db.collection("episodes").getDocuments { snapshot, error in
+            if let error = error {
+                print("❌ [\(TS())] Firestore fetch 실패: \(error.localizedDescription)")
+                completion(false)
+                return
+            }
+            guard let docs = snapshot?.documents else {
+                print("⚠️ [\(TS())] 문서 없음")
+                completion(false)
+                return
+            }
+
+            DispatchQueue.main.async {
+                var changed = 0
+
+                for d in docs {
+                    do {
+                        let ep = try d.data(as: Episode.self)
+
+                        let existing = try? context
+                            .fetch(FetchDescriptor<EpisodeModel>(predicate: #Predicate { $0.id == ep.id }))
+                            .first
+
+                        let mustUpdate = (existing == nil) || (existing!.uploadedAt < ep.uploadedAt)
+                        if mustUpdate {
+                            if let ex = existing { context.delete(ex) }
+                            let model = EpisodeModel(
+                                id: ep.id,
+                                title: ep.title,
+                                desc: ep.description,
+                                uploadedAt: ep.uploadedAt,
+                                fileName: ep.fileName
+                            )
+                            context.insert(model)
+                            changed += 1
+                        }
+                    } catch {
+                        print("❌ [\(TS())] 파싱 실패(\(d.documentID)): \(error.localizedDescription)")
+                    }
+                }
+
+                do {
+                    try context.save()
+                } catch {
+                    print("❌ [\(TS())] SwiftData 저장 실패(메타동기화): \(error.localizedDescription)")
+                }
+
+                self.loadLocalEpisodes(context: context)
+                print("✅ [\(TS())] 메타데이터 동기화 완료, 변경 \(changed)건")
+                completion(true)
+            }
+        }
+    }
+
+    // MARK: - Estimate total download size (bytes) for items needing download
+    func estimateTotalDownloadBytes(context: ModelContext, completion: @escaping (Int64) -> Void) {
+        print("🧮 [\(TS())] 다운로드 예상 용량 계산 시작 (S3 메타 기반)")
+
+        let db = Firestore.firestore()
+        db.collection("episodes").getDocuments { snapshot, error in
+            if let error = error {
+                print("❌ [\(TS())] Firestore fetch 실패(estimate): \(error.localizedDescription)")
+                completion(-1)
+                return
+            }
+            guard let docs = snapshot?.documents else {
+                print("⚠️ [\(TS())] 문서 없음(estimate)")
+                completion(0)
+                return
+            }
+
+            // 1) 다운로드 필요한 파일만 추출
+            var need: [String] = [] // fileName 목록
+            for d in docs {
+                if let ep = try? d.data(as: Episode.self) {
+                    let dst = self.documentsURL(for: ep.fileName)
+                    if self.shouldDownload(to: dst, uploadedAt: ep.uploadedAt) {
+                        need.append(ep.fileName)
+                    }
+                }
+            }
+            if need.isEmpty {
+                print("ℹ️ [\(TS())] 다운로드 필요 항목 없음")
+                completion(0)
+                return
+            }
+
+            // 2) S3에서 prefix 전체를 리스트로 가져와 파일명→사이즈 매핑
+            self.downloader.listObjectSizes { listResult in
+                switch listResult {
+                case .failure(let err):
+                    print("⚠️ [\(TS())] listObjects 실패: \(err.localizedDescription) → HEAD로 대체")
+                    // 전체를 HEAD로
+                    self.sumByHEAD(fileNames: need, completion: completion)
+
+                case .success(let sizeMap):
+                    // 3) 매핑으로 빠르게 합산, 누락분만 HEAD
+                    var total: Int64 = 0
+                    var missing: [String] = []
+
+                    func normalized(_ name: String) -> String {
+                        // downloader의 normalize와 동일하게 확장자 소문자화
+                        let ns = name as NSString
+                        let ext = ns.pathExtension
+                        guard !ext.isEmpty else { return name }
+                        return "\(ns.deletingPathExtension).\(ext.lowercased())"
+                    }
+
+                    for name in need {
+                        let n = normalized(name)
+                        if let v = sizeMap[n] ?? sizeMap[name] {
+                            total &+= v
+                        } else {
+                            missing.append(name)
+                        }
+                    }
+
+                    if missing.isEmpty {
+                        print("✅ [\(TS())] 예상 총 용량(bytes): \(total) (LIST 기반)")
+                        DispatchQueue.main.async { completion(total) }
+                    } else {
+                        print("ℹ️ [\(TS())] LIST에 없는 \(missing.count)건 → HEAD로 보완")
+                        self.sumByHEAD(fileNames: missing) { headBytes in
+                            if headBytes < 0 {
+                                DispatchQueue.main.async { completion(total > 0 ? total : -1) }
+                            } else {
+                                DispatchQueue.main.async { completion(total &+ headBytes) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// HEAD 요청으로 여러 파일의 사이즈 합산 (동시성 제한 4)
+    private func sumByHEAD(fileNames: [String], completion: @escaping (Int64) -> Void) {
+        if fileNames.isEmpty { completion(0); return }
+        let group = DispatchGroup()
+        let sem = DispatchSemaphore(value: 4)
+
+        var total: Int64 = 0
+        var allFailed = true
+
+        for f in fileNames {
+            group.enter()
+            sem.wait()
+            downloader.headSizeBytes(fileName: f) { result in
+                switch result {
+                case .success(let bytes):
+                    total &+= bytes
+                    allFailed = false
+                case .failure(let e):
+                    print("⚠️ [\(TS())] HEAD 실패: \(f) → \(e.localizedDescription)")
+                }
+                sem.signal()
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .global()) {
+            if allFailed {
+                completion(-1)
+            } else {
+                completion(total)
+            }
+        }
+    }
+
+
 
     private func downloadOne(fileName: String, uploadedAt: Date, completion: @escaping (Bool) -> Void) {
         // NCPDownloader는 Caches에 저장 → 완료 후 Documents로 이동
