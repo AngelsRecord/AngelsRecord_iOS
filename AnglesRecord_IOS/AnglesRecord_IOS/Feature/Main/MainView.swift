@@ -250,79 +250,149 @@ struct MainView: View {
 
     private func episodeRow(for episode: EpisodeModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(formatted(date: episode.uploadedAt))
-                .font(Font.SFPro.SemiBold.s12)
-                .foregroundColor(Color("subText"))
+                Text(formatted(date: episode.uploadedAt))
+                    .font(Font.SFPro.SemiBold.s12)
+                    .foregroundColor(Color("subText"))
 
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(episode.title)
-                    .font(Font.SFPro.SemiBold.s16)
-                    .foregroundColor(Color("mainText"))
-                    .lineLimit(2)
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(episode.title)
+                        .font(Font.SFPro.SemiBold.s16)
+                        .foregroundColor(Color("mainText"))
+                        .lineLimit(2)
 
-                if recordListViewModel.isDownloading(fileName: episode.fileName)
-                    || recordListViewModel.isDownloaded(episode) {
-                    ExampleEpDownBadge(episode: episode)
-                        .padding(4)
+                    if recordListViewModel.isDownloading(fileName: episode.fileName)
+                        || recordListViewModel.isDownloaded(episode) {
+                        ExampleEpDownBadge(episode: episode)
+                            .padding(4)
+                    }
                 }
+                .frame(width: 345, alignment: .leading)
+
+                Text(episode.desc)
+                    .font(Font.SFPro.Regular.s14)
+                    .foregroundColor(Color("subText"))
+                    .lineLimit(2)
             }
-            .frame(width: 345, alignment: .leading)
-
-            Text(episode.desc)
-                .font(Font.SFPro.Regular.s14)
-                .foregroundColor(Color("subText"))
-                .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { ensureLocalThenPlay(episode) }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onTapGesture { ensureLocalThenPlay(episode) }
-    }
 
-    // MARK: - 헬퍼
+        // MARK: - 헬퍼
 
-    private func formatted(date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "M월 d일"
-        formatter.locale = Locale(identifier: "ko_KR")
-        return formatter.string(from: date)
-    }
+        private func formatted(date: Date) -> String {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "M월 d일"
+            formatter.locale = Locale(identifier: "ko_KR")
+            return formatter.string(from: date)
+        }
 
-    private func playLatestEpisode() {
-        guard let latestEpisode = recordListViewModel.episodes.first else { return }
-        ensureLocalThenPlay(latestEpisode)
-    }
+        private func playLatestEpisode() {
+            guard let latestEpisode = recordListViewModel.episodes.first else { return }
+            ensureLocalThenPlay(latestEpisode)
+        }
     
-    // Download-if-needed, then play
+    // Download-if-needed → (다운로드된 것만 정렬 큐) → 재생
     private func ensureLocalThenPlay(_ episode: EpisodeModel) {
-        // 1) 마지막 탭 토큰 갱신
+        // 1) 마지막 탭 토큰 (연달아 탭해도 마지막 것만 유효)
         let token = UUID()
         pendingTapToken = token
 
-        // 2) 미니플레이어 즉시 표시(placeholder)
+        // 2) 미니플레이어를 즉시 로딩 상태로 띄우기
         selectedRecord = makeTempRecord(from: episode)
-        miniPlayerEpisodeFileName = episode.fileName  // 미니플레이어에서 다운로드 감지용
+        miniPlayerEpisodeFileName = episode.fileName
 
-        // 3) 필요 시에만 다운로드(24h 규칙은 ViewModel의 shouldDownload가 처리)
-        recordListViewModel.downloadIfNeeded(fileName: episode.fileName, uploadedAt: episode.uploadedAt) { ok in
+        // 3) 이미 로컬에 있으면 바로 큐 재구성 후 재생
+        if recordListViewModel.isDownloaded(episode) {
+            rebuildQueueFromDownloaded(startEpisode: episode)
+            playEpisode(episode)          // ⚠️ 이 함수는 큐를 다시 만들지 않도록 수정된 버전이어야 함
+            return
+        }
+
+        // 4) 없으면 다운로드 → 완료 시 마지막 탭인지 확인 → 큐 재구성 → 재생
+        recordListViewModel.downloadIfNeeded(
+            fileName: episode.fileName,
+            uploadedAt: episode.uploadedAt
+        ) { ok in
             DispatchQueue.main.async {
-                // 4) “마지막 탭”이 아니면 무시 (이전 탭의 콜백)
-                guard self.pendingTapToken == token else {
-                    print("↪︎ stale completion ignored: \(episode.fileName)")
-                    return
-                }
+                // 이전 탭의 콜백이면 무시
+                guard self.pendingTapToken == token else { return }
 
                 if ok {
-                    // 5) 마지막 탭이자 다운로드 OK → 재생 시작
-                    self.playEpisode(episode)
+                    self.rebuildQueueFromDownloaded(startEpisode: episode)
+                    self.playEpisode(episode)  // 큐를 덮어쓰지 않는 버전
                 } else {
-                    // 실패 처리: 로딩을 걷어내거나 알럿 등
-                    // 예) self.selectedRecord = nil
+                    // 실패 처리 (필요 시 로딩 해제/알럿 등)
+                    // self.selectedRecord = nil
                     print("❌ download failed: \(episode.fileName)")
                 }
             }
         }
     }
 
+
+    // 파일명/타이틀에서 "에피소드 번호"를 추출 (ep.14, EP 14, e14, 14 등 유연하게)
+    private func episodeNumber(of ep: EpisodeModel) -> Int? {
+        let candidates = [ep.fileName.lowercased(), ep.title.lowercased()]
+        for s in candidates {
+            // ep.14 / ep 14 / e14 / episode 14
+            let patterns = [
+                #"e(p(isode)?)?[\.\s]*([0-9]{1,4})"#,
+                #"(?:^|[^\d])([0-9]{1,4})(?:[^\d]|$)"# // fallback: 고립된 숫자
+            ]
+            for p in patterns {
+                if let m = try? NSRegularExpression(pattern: p)
+                    .firstMatch(in: s, range: NSRange(location: 0, length: s.utf16.count)),
+                   m.numberOfRanges >= 2 {
+                    // 마지막 캡쳐그룹을 우선
+                    for idx in stride(from: m.numberOfRanges - 1, through: 1, by: -1) {
+                        let r = m.range(at: idx)
+                        if r.location != NSNotFound,
+                           let range = Range(r, in: s),
+                           let n = Int(s[range]) { return n }
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    // "다운로드된 것들만" 모아 에피소드 넘버 오름차순 → RecordListModel 배열로 변환
+    private func buildDownloadedRecordsSorted() -> [RecordListModel] {
+        let downloaded = recordListViewModel.episodes.filter { recordListViewModel.isDownloaded($0) }
+
+        // 정렬: 1) 에피소드 번호(오름차순) 2) 번호가 없으면 업로드 날짜(오름차순)
+        let sorted = downloaded.sorted { a, b in
+            let na = episodeNumber(of: a)
+            let nb = episodeNumber(of: b)
+            if let na, let nb { return na < nb }
+            if na != nil { return true }
+            if nb != nil { return false }
+            return a.uploadedAt < b.uploadedAt
+        }
+
+        // 레코드로 변환
+        return sorted.map { e in
+            let url = recordListViewModel.getLocalFileURL(for: e.fileName)
+            let duration = CMTimeGetSeconds(AVURLAsset(url: url).duration)
+            return RecordListModel(
+                title: e.title,
+                artist: "엔젤스",
+                duration: duration,
+                fileURL: url,
+                uploadedAt: e.uploadedAt
+            )
+        }
+    }
+
+    // 큐 재구성: 다운로드된 것들만, 넘버링대로. 시작 포지션은 startEpisode에 맞춤
+    private func rebuildQueueFromDownloaded(startEpisode: EpisodeModel) {
+        let records = buildDownloadedRecordsSorted()
+        // startEpisode가 records 안 어디에 있는지(파일명 매칭) 찾기
+        let targetFile = startEpisode.fileName
+        let startIndex = records.firstIndex { $0.fileURL?.lastPathComponent == targetFile } ?? 0
+        playQueue.setFromRecords(records, startAt: startIndex)  // UserDefaults 스냅샷까지 저장됨 :contentReference[oaicite:2]{index=2}
+    }
 
     private func needsDownload(_ localURL: URL, uploadedAt: Date) -> Bool {
         let fm = FileManager.default
@@ -335,33 +405,41 @@ struct MainView: View {
     }
 
     private func playEpisode(_ episode: EpisodeModel) {
-        // ① 큐 재구성 (MainView에서만 reset)
-        playQueue.rebuildFromEpisodes(
-            recordListViewModel.episodes,
-            startAt: episode,
-            urlFor: { fileName in recordListViewModel.getLocalFileURL(for: fileName) },
-            artistFor: { ep in ep.desc }
-        )
-
-        // ② 현재 트랙으로 플레이
+        // 큐는 이미 '다운로드된 것만'으로 구성되어 있다는 가정.
+        // 해당 에피소드를 큐에서 찾아 startAt으로 맞추고 재생.
+        if let idx = playQueue.items.firstIndex(where: {
+            $0.fileURL?.lastPathComponent == episode.fileName
+        }) {
+            playQueue.setFromRecords(playQueue.items, startAt: idx)
+        }
+        playFromQueue()
+    }
+    
+    // 큐의 current를 실제로 재생하고, 리모컨 next/prev도 큐와 연동
+    private func playFromQueue() {
         guard let toPlay = playQueue.current else { return }
         withAnimation(.spring()) {
             selectedRecord = toPlay
             audioPlayer.play(toPlay)
         }
-
-        // ③ 리모콘(next/prev) → 큐 연동
         audioPlayer.onNextTrack = {
             guard playQueue.hasNext else { audioPlayer.stop(); return }
             playQueue.advance()
-            if let next = playQueue.current { audioPlayer.play(next); selectedRecord = next }
+            if let next = playQueue.current {
+                audioPlayer.play(next)
+                selectedRecord = next
+            }
         }
         audioPlayer.onPrevTrack = {
             guard playQueue.hasPrev else { return }
             playQueue.back()
-            if let prev = playQueue.current { audioPlayer.play(prev); selectedRecord = prev }
+            if let prev = playQueue.current {
+                audioPlayer.play(prev)
+                selectedRecord = prev
+            }
         }
     }
+
 
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
@@ -400,18 +478,9 @@ struct MainView: View {
     }
 
     private func playNextEpisode() {
-        guard let currentRecord = selectedRecord else { return }
-        guard let currentEpisode = recordListViewModel.episodes.first(where: { $0.title == currentRecord.title }) else { return }
-
-        let nextEpisode = recordListViewModel.episodes
-            .filter { $0.uploadedAt > currentEpisode.uploadedAt }
-            .min(by: { $0.uploadedAt < $1.uploadedAt })
-
-        let episodeToPlay = nextEpisode ?? recordListViewModel.episodes.min(by: { $0.uploadedAt < $1.uploadedAt })
-
-        if let episode = episodeToPlay {
-            playEpisode(episode)
-        }
+        guard playQueue.hasNext else { return }
+        playQueue.advance()
+        playFromQueue()
     }
 
     private func deleteRecord(_ record: RecordListModel) {
