@@ -20,22 +20,9 @@
 		0981EA4E2E07B62700874A4F /* A'Cast.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "A'Cast.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		0909F4AB2E602A2300770C96 /* Exceptions for "AnglesRecord_IOS" folder in "A'Cast" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"Application/Core/GoogleService-Info.plist",
-			);
-			target = 0981EA4D2E07B62700874A4F /* A'Cast */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		0981EA502E07B62700874A4F /* AnglesRecord_IOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				0909F4AB2E602A2300770C96 /* Exceptions for "AnglesRecord_IOS" folder in "A'Cast" target */,
-			);
 			path = AnglesRecord_IOS;
 			sourceTree = "<group>";
 		};
