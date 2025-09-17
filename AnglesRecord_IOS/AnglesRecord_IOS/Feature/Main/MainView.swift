@@ -25,17 +25,17 @@ struct MainView: View {
     @State private var showingPlayerView = false
     @State private var isLoading = false
     @State private var isRefreshing = false
-
+    
     @State private var showingReport = false
     
-
+    
     @State private var pendingTapToken: UUID? = nil
     // 미니플레이어에서 다운로드 상태 감지용(파일명)
     @State private var miniPlayerEpisodeFileName: String? = nil
-
-
+    
+    
     var body: some View {
-
+        
         ZStack(alignment: .bottom) {
             
             GeometryReader { geometry in
@@ -51,7 +51,7 @@ struct MainView: View {
             .allowsHitTesting(false)
             ScrollView {
                 VStack(spacing: 0) {
-
+                    
                     HStack {
                         Spacer() // 오른쪽 끝으로 밀기
                         HStack(spacing: 16) {
@@ -93,9 +93,9 @@ struct MainView: View {
                     .padding(.top, 8)
                     
                     podcastMainSection
-
+                    
                     descriptionSection
-
+                    
                     
                     Divider().padding(.horizontal)
                     
@@ -223,7 +223,7 @@ struct MainView: View {
             
             for rec in records {
                 if rec.uploadedAt != nil { continue }
-
+                
                 var matchedDate: Date? = nil
                 if let url = rec.fileURL {
                     let name = url.lastPathComponent
@@ -259,7 +259,7 @@ struct MainView: View {
                 .frame(width: 200, height: 200)
                 .cornerRadius(8)
                 .padding(.top, 41)
-
+            
             Text("전지적 씨팝 시점: 전팝시")
                 .font(Font.SFPro.SemiBold.s16)
                 .foregroundColor(Color("mainText"))
@@ -287,7 +287,7 @@ struct MainView: View {
         }
     }
     
-
+    
     private var descriptionSection: some View {
         Text("친구랑 수다 떠는 듯 편안하게, 때론 진지하게.\n에이캐스트가 매주 수요일, 새로운 에피소드로 찾아옵니다.")
             .font(Font.SFPro.Regular.s14)
@@ -297,7 +297,7 @@ struct MainView: View {
             .padding(.bottom, 29)
     }
     
-
+    
     private var loadingSection: some View {
         VStack(spacing: 20) {
             Spacer()
@@ -335,44 +335,44 @@ struct MainView: View {
                 .font(Font.SFPro.SemiBold.s12)
                 .foregroundColor(Color("subText"))
             
-
-                HStack(alignment: .firstTextBaseline, spacing: 2) {
-                    Text(episode.title)
-                        .font(Font.SFPro.SemiBold.s16)
-                        .foregroundColor(Color("mainText"))
-                        .lineLimit(2)
-
-                    if recordListViewModel.isDownloading(fileName: episode.fileName)
-                        || recordListViewModel.isDownloaded(episode) {
-                        ExampleEpDownBadge(episode: episode)
-                            .padding(4)
-                    }
+            
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(episode.title)
+                    .font(Font.SFPro.SemiBold.s16)
+                    .foregroundColor(Color("mainText"))
+                    .lineLimit(2)
+                
+                if recordListViewModel.isDownloading(fileName: episode.fileName)
+                    || recordListViewModel.isDownloaded(episode) {
+                    ExampleEpDownBadge(episode: episode)
+                        .padding(4)
                 }
-                .frame(width: 345, alignment: .leading)
-          
+            }
+            .frame(width: 345, alignment: .leading)
+            
             Text(episode.desc)
                 .font(Font.SFPro.Regular.s14)
                 .foregroundColor(Color("subText"))
                 .lineLimit(2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture { ensureLocalThenPlay(episode) }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { ensureLocalThenPlay(episode) }
+    }
 
         // MARK: - 헬퍼
 
-        private func formatted(date: Date) -> String {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "M월 d일"
-            formatter.locale = Locale(identifier: "ko_KR")
-            return formatter.string(from: date)
-        }
+    private func formatted(date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M월 d일"
+        formatter.locale = Locale(identifier: "ko_KR")
+        return formatter.string(from: date)
+    }
 
-        private func playLatestEpisode() {
-            guard let latestEpisode = recordListViewModel.episodes.first else { return }
-            ensureLocalThenPlay(latestEpisode)
-        }
+    private func playLatestEpisode() {
+        guard let latestEpisode = recordListViewModel.episodes.first else { return }
+        ensureLocalThenPlay(latestEpisode)
+    }
     
     // Download-if-needed → (다운로드된 것만 정렬 큐) → 재생
     private func ensureLocalThenPlay(_ episode: EpisodeModel) {
@@ -672,7 +672,7 @@ struct MainView: View {
                                 }, alignment: .topLeading
                             )
                     }
-
+                    
                     Section {
                         Toggle("진단 정보 포함 (기기/OS/앱 버전)", isOn: $includeDiagnostics)
                     } footer: {
@@ -699,13 +699,13 @@ struct MainView: View {
                         }
                         .disabled(
                             title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                                detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         )
                     }
                 }
                 .navigationTitle("문제 리포트")
                 .navigationBarTitleDisplayMode(.inline)
-//                .onTapGesture { endTextEditing() }
+                //                .onTapGesture { endTextEditing() }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("닫기") {
@@ -761,16 +761,18 @@ struct MainView: View {
             ]
             return components.url
         }
-    
-    // 탭 즉시 미니플레이어를 띄우기 위한 임시(비영구) 레코드
-    private func makeTempRecord(from ep: EpisodeModel) -> RecordListModel {
-        // SwiftData에 자동 저장되지 않음(삽입 안 하면 메모리 객체)
-        RecordListModel(
-            title: ep.title,
-            artist: "",          // 필요 시 채워도 OK
-            duration: 0,
-            fileURL: nil,
-            uploadedAt: ep.uploadedAt
-        )
     }
+        
+        // 탭 즉시 미니플레이어를 띄우기 위한 임시(비영구) 레코드
+        private func makeTempRecord(from ep: EpisodeModel) -> RecordListModel {
+            // SwiftData에 자동 저장되지 않음(삽입 안 하면 메모리 객체)
+            RecordListModel(
+                title: ep.title,
+                artist: "",          // 필요 시 채워도 OK
+                duration: 0,
+                fileURL: nil,
+                uploadedAt: ep.uploadedAt
+            )
+        }
+
 }
