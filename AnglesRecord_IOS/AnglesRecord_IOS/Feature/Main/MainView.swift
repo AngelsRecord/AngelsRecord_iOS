@@ -622,9 +622,9 @@ struct MainView: View {
                             .onDisappear { spin = false }
                         
                         // Stop square inside
-                        RoundedRectangle(cornerRadius: 4)
+                        RoundedRectangle(cornerRadius: 2)
                             .fill(Color.white)
-                            .frame(width: 8, height: 8)
+                            .frame(width: 10, height: 10)
                     } else {
                         Image(systemName: "arrow.down.circle.fill")
                             .resizable()
