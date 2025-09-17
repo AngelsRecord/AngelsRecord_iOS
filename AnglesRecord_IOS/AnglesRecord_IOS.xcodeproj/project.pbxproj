@@ -7,11 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		09499B1E2E7007C000704E50 /* AWSS3 in Frameworks */ = {isa = PBXBuildFile; productRef = 09499B1D2E7007C000704E50 /* AWSS3 */; };
 		0981EA7D2E07B6DD00874A4F /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 0981EA7C2E07B6DD00874A4F /* FirebaseAuth */; };
 		0981EA7F2E07B6DD00874A4F /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 0981EA7E2E07B6DD00874A4F /* FirebaseFirestore */; };
 		0981EA812E07B6DD00874A4F /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 0981EA802E07B6DD00874A4F /* FirebaseFunctions */; };
 		0981EA832E07B6DD00874A4F /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 0981EA822E07B6DD00874A4F /* FirebaseStorage */; };
 		0996B3312E2F0F2E00B57383 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 0996B3302E2F0F2E00B57383 /* FirebaseMessaging */; };
+		099802772E76C876006AE773 /* FirebaseRemoteConfig in Frameworks */ = {isa = PBXBuildFile; productRef = 099802762E76C876006AE773 /* FirebaseRemoteConfig */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,9 +33,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				09499B1E2E7007C000704E50 /* AWSS3 in Frameworks */,
 				0981EA812E07B6DD00874A4F /* FirebaseFunctions in Frameworks */,
 				0981EA832E07B6DD00874A4F /* FirebaseStorage in Frameworks */,
 				0996B3312E2F0F2E00B57383 /* FirebaseMessaging in Frameworks */,
+				099802772E76C876006AE773 /* FirebaseRemoteConfig in Frameworks */,
 				0981EA7D2E07B6DD00874A4F /* FirebaseAuth in Frameworks */,
 				0981EA7F2E07B6DD00874A4F /* FirebaseFirestore in Frameworks */,
 			);
@@ -91,6 +95,8 @@
 				0981EA802E07B6DD00874A4F /* FirebaseFunctions */,
 				0981EA822E07B6DD00874A4F /* FirebaseStorage */,
 				0996B3302E2F0F2E00B57383 /* FirebaseMessaging */,
+				099802762E76C876006AE773 /* FirebaseRemoteConfig */,
+				09499B1D2E7007C000704E50 /* AWSS3 */,
 			);
 			productName = AnglesRecord_IOS;
 			productReference = 0981EA4E2E07B62700874A4F /* A'Cast.app */;
@@ -122,6 +128,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				0981EA7B2E07B6DD00874A4F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				09499B1C2E7007BF00704E50 /* XCRemoteSwiftPackageReference "aws-sdk-ios-spm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0981EA4F2E07B62700874A4F /* Products */;
@@ -156,6 +163,8 @@
 /* Begin XCBuildConfiguration section */
 		0981EA6D2E07B62900874A4F /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 0981EA502E07B62700874A4F /* AnglesRecord_IOS */;
+			baseConfigurationReferenceRelativePath = Application/Core/Config.xcconfig;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -220,6 +229,8 @@
 		};
 		0981EA6E2E07B62900874A4F /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 0981EA502E07B62700874A4F /* AnglesRecord_IOS */;
+			baseConfigurationReferenceRelativePath = Application/Core/Config.xcconfig;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -277,6 +288,8 @@
 		};
 		0981EA702E07B62900874A4F /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 0981EA502E07B62700874A4F /* AnglesRecord_IOS */;
+			baseConfigurationReferenceRelativePath = Application/Core/Config.xcconfig;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -298,7 +311,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3;
+				MARKETING_VERSION = 1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "TeamAngels.AnglesRecord-IOS";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -315,6 +328,8 @@
 		};
 		0981EA712E07B62900874A4F /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 0981EA502E07B62700874A4F /* AnglesRecord_IOS */;
+			baseConfigurationReferenceRelativePath = Application/Core/Config.xcconfig;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -336,7 +351,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3;
+				MARKETING_VERSION = 1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "TeamAngels.AnglesRecord-IOS";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -375,6 +390,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		09499B1C2E7007BF00704E50 /* XCRemoteSwiftPackageReference "aws-sdk-ios-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/aws-amplify/aws-sdk-ios-spm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.41.0;
+			};
+		};
 		0981EA7B2E07B6DD00874A4F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
@@ -386,6 +409,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		09499B1D2E7007C000704E50 /* AWSS3 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 09499B1C2E7007BF00704E50 /* XCRemoteSwiftPackageReference "aws-sdk-ios-spm" */;
+			productName = AWSS3;
+		};
 		0981EA7C2E07B6DD00874A4F /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 0981EA7B2E07B6DD00874A4F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
@@ -410,6 +438,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0981EA7B2E07B6DD00874A4F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseMessaging;
+		};
+		099802762E76C876006AE773 /* FirebaseRemoteConfig */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0981EA7B2E07B6DD00874A4F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseRemoteConfig;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
