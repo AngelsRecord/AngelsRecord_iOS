@@ -361,7 +361,7 @@ struct MainView: View {
                 }
             }
         }
-        .background(.white)
+        .background(colorScheme == .dark ? .black : .white)
         .frame(maxWidth: .infinity)
     }
     
@@ -643,21 +643,21 @@ struct MainView: View {
                         let p = max(0, min(1, recordListViewModel.bulkStepProgress))
 
                         Circle()
-                            .stroke(Color.white, lineWidth: 4)
+                            .stroke(Color.subText, lineWidth: 2)
                             .frame(width: 28, height: 28)
 
                         Circle()
                             .trim(from: 0, to: p)
                             .stroke(
-                                Color("subText"),
-                                style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                                Color(.white),
+                                style: StrokeStyle(lineWidth: 2, lineCap: .round)
                             )
                             .rotationEffect(.degrees(-90))
                             .frame(width: 28, height: 28)
                             .animation(.linear(duration: 0.2), value: p)
 
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.white)
+                            .fill(Color.subText)
                             .frame(width: 8, height: 8)
                     } else {
                         Image(systemName: "arrow.down.circle.fill")
