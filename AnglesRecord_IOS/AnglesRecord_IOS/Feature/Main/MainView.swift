@@ -41,7 +41,7 @@ struct MainView: View {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     GradientBackground()
-                        .frame(height: UIScreen.main.bounds.height * 0.57)
+                        .frame(height: UIScreen.main.bounds.height * 0.5)
                         .frame(maxWidth: .infinity)
                         .ignoresSafeArea(.keyboard, edges: .top)
                     Spacer()
@@ -51,12 +51,23 @@ struct MainView: View {
             .allowsHitTesting(false)
             ScrollView {
                 VStack(spacing: 0) {
-                    
+                    VStack{
                     HStack {
                         Spacer() // 오른쪽 끝으로 밀기
                         HStack(spacing: 16) {
                             RefreshButton(isRefreshing: $isRefreshing) {
-                                Task { await refreshNow(trigger: "manual") }
+                                if isRefreshing {
+                                    // ▶️ 정지: 원하는 모드 선택
+                                    recordListViewModel.requestBulkStop(.immediatePurge) // 또는 .finishCurrent
+                                    notifyDownloadFinished(message: "에피소드 다운로드가 취소되었습니다.")
+                                    return
+                                }
+                                // ▶️ 시작
+                                notifyDownloadStart()
+                                Task { await downloadFullEpisode() }
+                            }
+                            .onChange(of: recordListViewModel.isBulkDownloading) { downloading in
+                                if !downloading { isRefreshing = false }
                             }
                             
                             Menu {
@@ -92,10 +103,15 @@ struct MainView: View {
                     }
                     .padding(.top, 8)
                     
-                    podcastMainSection
                     
-                    descriptionSection
-                    
+                        podcastMainSection
+                        
+                        descriptionSection
+                    }
+                    .background(GradientBackground()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: UIScreen.main.bounds.height * 1.5)
+                        .ignoresSafeArea(.keyboard, edges: .top))
                     
                     Divider().padding(.horizontal)
                     
@@ -148,38 +164,60 @@ struct MainView: View {
             allowedContentTypes: [.audio],
             allowsMultipleSelection: false
         ) { handleFileImport($0) }
-            .onAppear {
-                print("👀 [\(TS())] MainView.onAppear")
-                // 1) 로컬 먼저
-                recordListViewModel.loadLocalEpisodes(context: modelContext)
-                
-                // 2) (필요 시) 1회 백필
-                backfillUploadedAtOnceIfNeeded()
-                
-                // 3) 푸시 플래그 감지 시 자동 동기화
-                if shouldFetchNewEpisodes {
-                    print("📥 [\(TS())] 푸시 감지됨 → 자동 동기화")
-                    Task { await refreshNow(trigger: "onAppear-flag") }
-                }
+        .onAppear {
+            print("👀 [\(TS())] MainView.onAppear")
+            // 1) 로컬 먼저
+            recordListViewModel.loadLocalEpisodes(context: modelContext)
+            
+            // 2) (필요 시) 1회 백필
+            backfillUploadedAtOnceIfNeeded()
+            
+            // 3) 푸시 플래그 감지 시 자동 동기화
+            if shouldFetchNewEpisodes {
+                print("📥 [\(TS())] 푸시 감지됨 → 자동 동기화")
+                Task { await refreshNow(trigger: "onAppear-flag") }
             }
-            .onChange(of: shouldFetchNewEpisodes) { newVal in
-                print("🔁 [\(TS())] shouldFetchNewEpisodes 변경: \(newVal)")
-                if newVal {
-                    Task { await refreshNow(trigger: "flag-onchange") }
-                }
+        }
+        .onChange(of: shouldFetchNewEpisodes) { newVal in
+            print("🔁 [\(TS())] shouldFetchNewEpisodes 변경: \(newVal)")
+            if newVal {
+                Task { await refreshNow(trigger: "flag-onchange") }
             }
+        }
+    }
+    
+    // MARK: - 전체 동기화 + 직렬 다운로드
+    private func downloadFullEpisode() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+
+        // 시작 알림
+        (UIApplication.shared.delegate as? AppDelegate)?
+            .scheduleLocalNotification(title: "A'Cast",
+                                       body: "에피소드가 백그라운드에서 다운로드 중입니다.",
+                                       delay: 0.5,
+                                       category: "download")
+
+        await withCheckedContinuation { cont in
+            recordListViewModel.fetchAndSyncEpisodes(context: modelContext) { _ in
+                cont.resume()
+            }
+        }
+
+        // 완료 알림
+        (UIApplication.shared.delegate as? AppDelegate)?
+            .scheduleLocalNotification(title: "A'Cast",
+                                       body: "에피소드 다운로드가 끝났습니다.",
+                                       delay: 0.5,
+                                       category: "download")
+
+        isRefreshing = false
     }
     
     // MARK: - 새로고침 (completion 기반으로 정확히 대기)
-    
     private func refreshNow(trigger: String) async {
-        guard !isRefreshing else {
-            print("⏳ [\(TS())] refreshNow(\(trigger)) SKIP: 이미 진행 중")
-            return
-        }
-        isRefreshing = true
         print("🚀 [\(TS())] refreshNow 시작 by \(trigger)")
-        
+
         await withCheckedContinuation { cont in
             recordListViewModel.syncEpisodesMetadataOnly(context: modelContext) { ok in
                 print("🧩 [\(TS())] syncEpisodesMetadataOnly 완료 ok=\(ok)")
@@ -188,13 +226,12 @@ struct MainView: View {
                 }
             }
         }
-        
+
         if shouldFetchNewEpisodes {
             print("✅ [\(TS())] 자동 새로고침 1회 완료 → 플래그 OFF")
             shouldFetchNewEpisodes = false
         }
-        
-        isRefreshing = false
+
         print("🏁 [\(TS())] refreshNow 종료")
     }
     
@@ -308,7 +345,6 @@ struct MainView: View {
         }
         .background(.white)
         .frame(maxWidth: .infinity)
-        .frame(minHeight: .infinity)
     }
     
     private var episodeListContent: some View {
@@ -335,21 +371,22 @@ struct MainView: View {
                 .font(Font.SFPro.SemiBold.s12)
                 .foregroundColor(Color("subText"))
             
-            
             HStack(alignment: .center, spacing: 2) {
                 Text(episode.title)
                     .font(Font.SFPro.SemiBold.s16)
                     .foregroundColor(Color("mainText"))
                     .lineLimit(2)
                     .padding(.trailing, 6)
-                
+
+                // ⬇️ 진행/완료 상태일 때만 배지 노출 (벌크 중이면 해당 파일에 한해 자동 표시됨)
                 if recordListViewModel.isDownloading(fileName: episode.fileName)
                     || recordListViewModel.isDownloaded(episode) {
                     DownloadLoadingIndicator(episode: episode)
+                        .allowsHitTesting(false) // 행 탭 방해 X
                 }
             }
             .frame(width: 345, alignment: .leading)
-            
+
             Text(episode.desc)
                 .font(Font.SFPro.Regular.s14)
                 .foregroundColor(Color("subText"))
@@ -357,7 +394,13 @@ struct MainView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture { ensureLocalThenPlay(episode) }
+        .onTapGesture {
+            if recordListViewModel.isBlockedForInteraction(episode) {
+                print("🚫 [\(TS())] 벌크 중 미다운로드 에피소드 탭 차단: \(episode.fileName)")
+                return
+            }
+            ensureLocalThenPlay(episode)
+        }
     }
 
         // MARK: - 헬퍼
@@ -586,45 +629,36 @@ struct MainView: View {
     // MARK: - UI Components
     
     private struct RefreshButton: View {
+        @EnvironmentObject var recordListViewModel: RecordListViewModel
         @Binding var isRefreshing: Bool
         var action: () -> Void
-        
-        @State private var spin = false
-        
+
         var body: some View {
             Button {
-                guard !isRefreshing else { return }
-                action()
+                // ❌ guard !isRefreshing else { return }  -> 제거!
+                action() // 시작/정지 토글은 호출측에서 처리
             } label: {
                 ZStack {
                     if isRefreshing {
-                        // Background circle track
+                        let p = max(0, min(1, recordListViewModel.bulkStepProgress))
+
                         Circle()
                             .stroke(Color.white, lineWidth: 4)
                             .frame(width: 28, height: 28)
-                        
-                        // Rotating arc
+
                         Circle()
-                            .trim(from: 0, to: 0.28)
+                            .trim(from: 0, to: p)
                             .stroke(
                                 Color("subText"),
                                 style: StrokeStyle(lineWidth: 4, lineCap: .round)
                             )
+                            .rotationEffect(.degrees(-90))
                             .frame(width: 28, height: 28)
-                            .rotationEffect(.degrees(spin ? 360 : 0))
-                            .animation(
-                                isRefreshing
-                                    ? .linear(duration: 1.0).repeatForever(autoreverses: false)
-                                    : .default,
-                                value: spin
-                            )
-                            .onAppear { spin = true }
-                            .onDisappear { spin = false }
-                        
-                        // Stop square inside
+                            .animation(.linear(duration: 0.2), value: p)
+
                         RoundedRectangle(cornerRadius: 2)
                             .fill(Color.white)
-                            .frame(width: 10, height: 10)
+                            .frame(width: 8, height: 8)
                     } else {
                         Image(systemName: "arrow.down.circle.fill")
                             .resizable()
@@ -637,6 +671,10 @@ struct MainView: View {
             .accessibilityLabel(isRefreshing ? "다운로드 중" : "새로고침")
         }
     }
+
+
+
+
     
     // MARK: - Report Sheet
     
@@ -763,18 +801,37 @@ struct MainView: View {
         }
     }
         
-        // 탭 즉시 미니플레이어를 띄우기 위한 임시(비영구) 레코드
-        private func makeTempRecord(from ep: EpisodeModel) -> RecordListModel {
-            // SwiftData에 자동 저장되지 않음(삽입 안 하면 메모리 객체)
-            RecordListModel(
-                title: ep.title,
-                artist: "",          // 필요 시 채워도 OK
-                duration: 0,
-                fileURL: nil,
-                uploadedAt: ep.uploadedAt
-            )
-        }
+    // 탭 즉시 미니플레이어를 띄우기 위한 임시(비영구) 레코드
+    private func makeTempRecord(from ep: EpisodeModel) -> RecordListModel {
+        // SwiftData에 자동 저장되지 않음(삽입 안 하면 메모리 객체)
+        RecordListModel(
+            title: ep.title,
+            artist: "",          // 필요 시 채워도 OK
+            duration: 0,
+            fileURL: nil,
+            uploadedAt: ep.uploadedAt
+        )
+    }
 
+    private func notifyDownloadStart() {
+        (UIApplication.shared.delegate as? AppDelegate)?
+            .scheduleLocalNotification(
+                title: "A'Cast",
+                body: "에피소드가 백그라운드에서 다운로드 중입니다.",
+                delay: 0.5,
+                category: "download"
+            )
+    }
+
+    private func notifyDownloadFinished(message: String = "에피소드 다운로드가 끝났습니다.") {
+        (UIApplication.shared.delegate as? AppDelegate)?
+            .scheduleLocalNotification(
+                title: "A'Cast",
+                body: message,
+                delay: 0.5,
+                category: "download"
+            )
+    }
 }
 
 #Preview {

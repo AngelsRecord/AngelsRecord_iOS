@@ -15,6 +15,8 @@ import FirebaseFirestore
 import FirebaseFunctions
 import FirebaseMessaging
 
+import AWSS3
+
 // MARK: - 중복 업서트/토픽 구독 방지 유틸
 final class PushRegistrationManager {
     static let shared = PushRegistrationManager()
@@ -68,6 +70,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     fileprivate let lastPushAtKey   = "lastPushReceivedAt"     // 마지막 푸시 수신 시각
     fileprivate let lastRefreshAtKey = "lastEpisodesRefreshAt" // ViewModel에서 저장 완료 시 기록
 
+    // 🔑 AWS 키 문자열 (NCP S3 호환)
+    private let transferKey = "ncp.transfer"
+    private let s3Key       = "ncp.s3"
+    private let presignKey  = "ncp.presign"
+
     // MARK: - App Lifecycle
 
     func application(
@@ -92,6 +99,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // ✅ 델리게이트
         UNUserNotificationCenter.current().delegate = self
         Messaging.messaging().delegate = self
+
+//        // ✅ (중요) AWSS3 / TransferUtility 런치 시점 등록
+//        registerAWSClientsAtLaunch()
 
         // 🔹 알림 탭으로 “런치된” 경우도 즉시 플래그 ON
         if let _ = launchOptions?[.remoteNotification] {
@@ -152,6 +162,65 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
+// MARK: - AWS 등록 (런치 시점)
+private extension AppDelegate {
+
+    func registerAWSClientsAtLaunch() {
+        // Info.plist 에서 읽기
+        let endpointRaw = (Bundle.main.object(forInfoDictionaryKey: "AWS_ENDPOINT") as? String) ?? "https://kr.object.ncloudstorage.com"
+        let endpointUrl = sanitizeEndpoint(endpointRaw)
+
+        let accessKey = (Bundle.main.object(forInfoDictionaryKey: "AWS_ACCESS_KEY") as? String) ?? ""
+        let secretKey = (Bundle.main.object(forInfoDictionaryKey: "AWS_SECRET_KEY") as? String) ?? ""
+
+        guard let endpoint = AWSEndpoint(urlString: endpointUrl) else {
+            print("❌ AWSEndpoint 생성 실패: \(endpointUrl)")
+            return
+        }
+
+        let credentials = AWSStaticCredentialsProvider(accessKey: accessKey, secretKey: secretKey)
+        guard let serviceConfig = AWSServiceConfiguration(
+            region: .APNortheast2, // NCP KR 리전. 실제 리전은 endpoint override로 무시됨
+            endpoint: endpoint,
+            credentialsProvider: credentials
+        ) else {
+            print("❌ AWSServiceConfiguration 생성 실패")
+            return
+        }
+
+        // TransferUtility 설정 (내부적으로 background URLSession 사용)
+        let tuConfig = AWSS3TransferUtilityConfiguration()
+        tuConfig.isAccelerateModeEnabled = false
+        // 필요 시 동시성/타임아웃 등 설정 가능:
+        // tuConfig.retryLimit = 3
+        // tuConfig.timeoutIntervalForResource = 60 * 60
+
+        // 🔑 키는 ViewModel / NCPDownloader와 동일 키를 사용해야 함
+        AWSS3TransferUtility.register(
+            with: serviceConfig,
+            transferUtilityConfiguration: tuConfig,
+            forKey: transferKey
+        )
+        AWSS3.register(with: serviceConfig, forKey: s3Key)
+        AWSS3PreSignedURLBuilder.register(with: serviceConfig, forKey: presignKey)
+
+        print("✅ AWSS3/TransferUtility 등록 완료 (endpoint=\(endpointUrl))")
+    }
+
+    func sanitizeEndpoint(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.isEmpty || s == "/" || s == "https://" || s == "http://" {
+            s = "https://kr.object.ncloudstorage.com"
+        }
+        let lower = s.lowercased()
+        if !lower.hasPrefix("http://") && !lower.hasPrefix("https://") {
+            s = "https://" + s
+        }
+        while s.hasSuffix("/") { s.removeLast() }
+        return s
+    }
+}
+
 // MARK: - 포그라운드 복귀 시 알림/배지 보정
 extension AppDelegate {
     /// 앱이 살아있는 상태에서 알림이 오고, 사용자가 아이콘으로 진입한 경우를 보정
@@ -188,7 +257,7 @@ extension AppDelegate {
     fileprivate func checkAndSetupPushFlow(after delay: TimeInterval = 0) {
         let work = {
             UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
-                print("ℹ️ 알림 권한 상태 확인: \(settings.authorizationStatus.rawValue)")  // 로그 추가: 권한 상태 (0: notDetermined, 1: denied, 2: authorized)
+                print("ℹ️ 알림 권한 상태 확인: \(settings.authorizationStatus.rawValue)")  // 로그 추가
                 guard let self = self else { return }
                 switch settings.authorizationStatus {
                 case .notDetermined:
@@ -385,10 +454,10 @@ extension AppDelegate {
         content.body = body
         content.sound = UNNotificationSound.default
         content.categoryIdentifier = category  // 카테고리 설정
-        
+
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(delay, 1), repeats: false)  // 최소 1초 딜레이
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
-        
+
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
                 print("❌ 로컬 알림 스케줄 실패: \(error.localizedDescription)")
@@ -401,10 +470,15 @@ extension AppDelegate {
 
 // MARK: - Background Download Handler
 extension AppDelegate {
-    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
-        print("ℹ️ 백그라운드 URLSession 이벤트 처리: \(identifier)")
-        if identifier == "com.anglesrecord.backgrounddownload" {
-            backgroundCompletionHandler = completionHandler
-        }
+    func application(_ application: UIApplication,
+                     handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        print("ℹ️ background URLSession events: \(identifier)")
+        // ✅ 반드시 전달: TransferUtility가 내부적으로 completion을 들고 있다가 끝나면 호출
+        AWSS3TransferUtility.interceptApplication(
+            application,
+            handleEventsForBackgroundURLSession: identifier,
+            completionHandler: completionHandler
+        )
     }
 }

@@ -9,6 +9,10 @@ private func TS() -> String {
     return f.string(from: Date())
 }
 
+extension RecordListViewModel {
+    enum BulkStopMode { case immediatePurge, finishCurrent }
+}
+
 final class RecordListViewModel: NSObject, ObservableObject {
 
     // MARK: - Public State
@@ -20,6 +24,16 @@ final class RecordListViewModel: NSObject, ObservableObject {
     
     private let stalenessThreshold: TimeInterval = 86_400 // 24h
     private let enableSkipLogs = false
+    
+    @Published var isBulkDownloading: Bool = false
+    @Published var bulkTotal: Int = 0
+    @Published var bulkDone: Int = 0
+    var bulkProgress: Double { bulkTotal == 0 ? 0 : Double(bulkDone) / Double(bulkTotal) }
+    
+    private var bulkStopRequested: Bool = false
+    private var bulkStopMode: BulkStopMode = .finishCurrent
+    private var bulkToken = UUID() // 새 토큰이 발급되면 이전 벌크 체인은 무시
+
 
     // MARK: - Config (B안: "/$()/" → "//")
     private func read(_ key: String) -> String {
@@ -78,36 +92,39 @@ final class RecordListViewModel: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Fetch + Sync (직렬 다운로드)
     func fetchAndSyncEpisodes(context: ModelContext, completion: @escaping (Bool) -> Void) {
         print("🔥 [\(TS())] Firestore 동기화 시작")
-        isLoadingEpisodes = true
+
+        // 새 벌크 시작: 플래그 초기화 + 새 토큰
+        self.bulkStopRequested = false
+        self.bulkStopMode = .finishCurrent
+        let token = UUID()
+        self.bulkToken = token
 
         let db = Firestore.firestore()
         db.collection("episodes").getDocuments { snapshot, error in
             if let error = error {
                 print("❌ [\(TS())] Firestore fetch 실패: \(error.localizedDescription)")
-                self.isLoadingEpisodes = false
-                completion(false)
-                return
+                DispatchQueue.main.async { self.isBulkDownloading = false }
+                completion(false); return
             }
             guard let docs = snapshot?.documents else {
                 print("⚠️ [\(TS())] 문서 없음")
-                self.isLoadingEpisodes = false
-                completion(false)
-                return
+                DispatchQueue.main.async { self.isBulkDownloading = false }
+                completion(false); return
             }
 
             print("📥 [\(TS())] 수신: \(docs.count)개")
 
             DispatchQueue.main.async {
+                self.isBulkDownloading = true
+
                 var toDownload: [(fileName: String, uploadedAt: Date)] = []
                 var changed = 0
 
                 for d in docs {
                     do {
                         let ep = try d.data(as: Episode.self)
-
                         let existing = try? context
                             .fetch(FetchDescriptor<EpisodeModel>(predicate: #Predicate { $0.id == ep.id }))
                             .first
@@ -115,38 +132,70 @@ final class RecordListViewModel: NSObject, ObservableObject {
                         let mustUpdate = (existing == nil) || (existing!.uploadedAt < ep.uploadedAt)
                         if mustUpdate {
                             if let ex = existing { context.delete(ex) }
-                            let model = EpisodeModel(
-                                id: ep.id,
-                                title: ep.title,
-                                desc: ep.description,
-                                uploadedAt: ep.uploadedAt,
-                                fileName: ep.fileName
-                            )
-                            context.insert(model)
+                            context.insert(EpisodeModel(
+                                id: ep.id, title: ep.title, desc: ep.description,
+                                uploadedAt: ep.uploadedAt, fileName: ep.fileName
+                            ))
                             changed += 1
                         }
 
-                        // 직렬 다운로드 큐 구성
                         let dst = self.documentsURL(for: ep.fileName)
                         if self.shouldDownload(to: dst, uploadedAt: ep.uploadedAt) {
                             toDownload.append((ep.fileName, ep.uploadedAt))
                         }
-
                     } catch {
                         print("❌ [\(TS())] 파싱 실패(\(d.documentID)): \(error.localizedDescription)")
                     }
                 }
 
-                do {
-                    try context.save()
-                } catch {
+                do { try context.save() } catch {
                     print("❌ [\(TS())] SwiftData 저장 실패(프리-다운로드): \(error.localizedDescription)")
                 }
 
-                // 직렬 다운로드 시작
-                self.downloadSequentially(items: toDownload) { _ in
+                // 정렬: 숫자 내림차순 → 업로드 최신
+                func episodeNumber(from fileName: String) -> Int? {
+                    let s = fileName.lowercased()
+                    if let r = s.range(of: "ep") {
+                        var i = r.upperBound
+                        while i < s.endIndex, !s[i].isNumber { i = s.index(after: i) }
+                        var d = ""; while i < s.endIndex, s[i].isNumber { d.append(s[i]); i = s.index(after: i) }
+                        if let v = Int(d) { return v }
+                    }
+                    var cur = "", last: String?
+                    for ch in s { if ch.isNumber { cur.append(ch) } else { if !cur.isEmpty { last = cur; cur = "" } } }
+                    if !cur.isEmpty { last = cur }
+                    return last.flatMap(Int.init)
+                }
+                toDownload.sort { lhs, rhs in
+                    let ln = episodeNumber(from: lhs.fileName)
+                    let rn = episodeNumber(from: rhs.fileName)
+                    switch (ln, rn) {
+                    case let (l?, r?):
+                        if l != r { return l > r }
+                        return lhs.uploadedAt > rhs.uploadedAt
+                    case (nil, let _?):
+                        return false
+                    case (let _?, nil):
+                        return true
+                    case (nil, nil):
+                        return lhs.uploadedAt > rhs.uploadedAt
+                    }
+                }
+
+                self.bulkTotal = toDownload.count
+                self.bulkDone  = 0
+
+                guard !toDownload.isEmpty else {
                     self.loadLocalEpisodes(context: context)
-                    self.isLoadingEpisodes = false
+                    self.isBulkDownloading = false
+                    print("📦 [\(TS())] 저장/동기화 완료, 변경 \(changed)건, 다운로드 0건")
+                    completion(true); return
+                }
+
+                // 체인 시작(토큰 전달)
+                self.downloadSequentially(items: toDownload, token: token) { _ in
+                    self.loadLocalEpisodes(context: context)
+                    self.isBulkDownloading = false
                     print("📦 [\(TS())] 저장/동기화 완료, 변경 \(changed)건, 다운로드 \(toDownload.count)건(직렬)")
                     completion(true)
                 }
@@ -154,6 +203,31 @@ final class RecordListViewModel: NSObject, ObservableObject {
         }
     }
 
+    func requestBulkStop(_ mode: BulkStopMode) {
+        DispatchQueue.main.async {
+            self.bulkStopRequested = true
+            self.bulkStopMode = mode
+
+            if mode == .immediatePurge {
+                // 다음 체인부터 중단되도록 토큰 변경
+                self.bulkToken = UUID()
+
+                // 네트워크 작업 취소 + 상태 정리
+                let targets = Array(self.activeDownloads)
+                for f in targets {
+                    // ⚠️ NCPDownloader에 취소 API가 있다면 구현/호출하세요.
+                    self.downloader.cancel(fileName: f)          // ← 구현 필요
+                    self.activeDownloads.remove(f)
+                    self.downloadProgress[f] = nil
+                }
+
+                // 즉시 UI 종료
+                self.isBulkDownloading = false
+            }
+        }
+    }
+
+    
     // MARK: - File Paths & Decisions
     private func documentsURL(for fileName: String) -> URL {
         let doc = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -179,8 +253,35 @@ final class RecordListViewModel: NSObject, ObservableObject {
         return !shouldDownload(to: url, uploadedAt: episode.uploadedAt, log: false)
     }
 
-    // 실제 다운로드 판단: 여기만 로그ON
+    /// 벌크 중에 '아직 안 받은' 에피소드는 탭/수동다운로드 차단
+    func isBlockedForInteraction(_ ep: EpisodeModel) -> Bool {
+        isBulkDownloading
+        && !isDownloaded(ep)
+        && !isDownloading(fileName: ep.fileName)
+    }
+
+    var bulkSmoothProgress: Double {
+        guard bulkTotal > 0 else { return 0 }
+        // 직렬 다운로드니까 현재 진행 중인 파일의 progress 하나만 보면 됨
+        let currentFrac = activeDownloads.compactMap { downloadProgress[$0] }.max() ?? 0
+        return (Double(bulkDone) + currentFrac) / Double(bulkTotal)
+    }
+
+    // 직렬 벌크 다운로드의 '계단식' 진행률 (0~1)
+    var bulkStepProgress: Double {
+        guard bulkTotal > 0 else { return 0 }
+        return Double(bulkDone) / Double(bulkTotal)
+    }
+    
+    // 단일 다운로드 진입 가드(혹시 다른 경로로 호출돼도 안전)
     func downloadIfNeeded(fileName: String, uploadedAt: Date, completion: @escaping (Bool) -> Void) {
+        // ✅ 벌크 도중 신규 수동 다운로드 방지 (이미 진행 중인 아이템은 예외)
+        if isBulkDownloading && !activeDownloads.contains(fileName) {
+            print("⛔️ [\(TS())] 벌크 중 수동 다운로드 차단: \(fileName)")
+            DispatchQueue.main.async { completion(false) }
+            return
+        }
+
         let localURL = getLocalFileURL(for: fileName)
         if shouldDownload(to: localURL, uploadedAt: uploadedAt, log: true) {
             downloadOne(fileName: fileName, uploadedAt: uploadedAt, completion: completion)
@@ -188,6 +289,7 @@ final class RecordListViewModel: NSObject, ObservableObject {
             completion(true)
         }
     }
+
     
     private func shouldDownload(to localURL: URL, uploadedAt: Date, log: Bool = false) -> Bool {
         let fm = FileManager.default
@@ -221,21 +323,53 @@ final class RecordListViewModel: NSObject, ObservableObject {
         items: [(fileName: String, uploadedAt: Date)],
         index: Int = 0,
         aggregatedOK: Bool = true,
+        token: UUID,
         completion: @escaping (Bool) -> Void
     ) {
+        // 토큰 바뀌면(=중단/재시작) 즉시 종료
+        guard token == self.bulkToken else {
+            completion(false); return
+        }
+        // finishCurrent 모드에서, "다음으로 넘어가기 전" 중단 체크
+        if bulkStopRequested && bulkStopMode == .finishCurrent && index > 0 {
+            completion(aggregatedOK); return
+        }
         guard index < items.count else {
             completion(aggregatedOK); return
         }
+
         let item = items[index]
+
+        // immediatePurge 모드: 다음 항목 시작 자체를 막음
+        if bulkStopRequested && bulkStopMode == .immediatePurge {
+            completion(aggregatedOK); return
+        }
+
         downloadOne(fileName: item.fileName, uploadedAt: item.uploadedAt) { ok in
+            // 파일 '성공'일 때만 한 칸 증가(계단식)
+            if ok { DispatchQueue.main.async { self.bulkDone += 1 } }
+
+            // completion이 들어왔을 때도 토큰 확인 (중간에 stop → 토큰 변경된 상황)
+            guard token == self.bulkToken else {
+                completion(false); return
+            }
+
+            // finishCurrent 모드: 현재 파일 끝났고 stop 요청되었으면 여기서 종료
+            if self.bulkStopRequested && self.bulkStopMode == .finishCurrent {
+                completion(aggregatedOK && ok); return
+            }
+
+            // 다음으로 진행
             self.downloadSequentially(
                 items: items,
                 index: index + 1,
                 aggregatedOK: aggregatedOK && ok,
+                token: token,
                 completion: completion
             )
         }
     }
+
     
     // MARK: - Metadata only sync (no audio downloads)
     func syncEpisodesMetadataOnly(context: ModelContext, completion: @escaping (Bool) -> Void) {
@@ -295,6 +429,37 @@ final class RecordListViewModel: NSObject, ObservableObject {
             }
         }
     }
+
+    /// ep.15.mp3 → 15 를 우선 추출. 없으면 파일명 내 '마지막 숫자 그룹'을 사용.
+    private func episodeNumber(from fileName: String) -> Int? {
+        let lower = fileName.lowercased()
+
+        // 1) "ep" 다음의 숫자 우선 탐색
+        if let epRange = lower.range(of: "ep") {
+            var i = epRange.upperBound
+            // 구분자 건너뛰기 (., _, -, 공백 등)
+            while i < lower.endIndex, !lower[i].isNumber { i = lower.index(after: i) }
+            var digits = ""
+            while i < lower.endIndex, lower[i].isNumber {
+                digits.append(lower[i]); i = lower.index(after: i)
+            }
+            if let v = Int(digits) { return v }
+        }
+
+        // 2) 폴백: 파일명에서 '마지막' 숫자 그룹 사용
+        var current = ""
+        var last: String?
+        for ch in lower {
+            if ch.isNumber {
+                current.append(ch)
+            } else {
+                if !current.isEmpty { last = current; current = "" }
+            }
+        }
+        if !current.isEmpty { last = current }
+        return last.flatMap { Int($0) }
+    }
+
 
     // MARK: - Estimate total download size (bytes) for items needing download
     func estimateTotalDownloadBytes(context: ModelContext, completion: @escaping (Int64) -> Void) {

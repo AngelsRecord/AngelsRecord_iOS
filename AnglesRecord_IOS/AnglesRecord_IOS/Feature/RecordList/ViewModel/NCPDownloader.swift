@@ -41,6 +41,9 @@ final class NCPDownloader {
     private let transferKey = "ncp.transfer"
     private let s3Key       = "ncp.s3"
     private let presignKey  = "ncp.presign"
+    
+    private let syncQ = DispatchQueue(label: "ncp.downloader.sync")
+    private var downloadTasks: [String: AWSS3TransferUtilityDownloadTask] = [:]
 
     // MARK: - Init
     init(cfg: Config) {
@@ -94,21 +97,15 @@ final class NCPDownloader {
         completion: @escaping (Result<(localURL: URL, bytesPerSec: Double), Error>) -> Void
     ) {
         guard let transfer = AWSS3TransferUtility.s3TransferUtility(forKey: transferKey) else {
-            completion(.failure(NSError(
-                domain: "NCPDownloader",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "TransferUtility 키 조회 실패"]
-            )))
+            completion(.failure(NSError(domain: "NCPDownloader", code: -1,
+                                        userInfo: [NSLocalizedDescriptionKey: "TransferUtility 키 조회 실패"])))
             return
         }
 
         let normalized = normalizeFileName(fileName)
         let key = joinKey(prefix: cfg.keyPrefix, fileName: normalized)
 
-        let localURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
-            .first!
-            .appendingPathComponent(normalized, isDirectory: false)
-
+        let localURL = cachesURL(for: normalized)
         try? FileManager.default.removeItem(at: localURL)
 
         let exp = AWSS3TransferUtilityDownloadExpression()
@@ -120,19 +117,19 @@ final class NCPDownloader {
             progress?(prog.fractionCompleted)
         }
 
-        transfer.download(to: localURL, bucket: cfg.bucket, key: key, expression: exp) { task, _, _, error in
+        // ⬇️ 태스크 핸들 확보/보관
+        let taskAWSTask = transfer.download(to: localURL, bucket: cfg.bucket, key: key, expression: exp) { task, _, _, error in
+            // 완료/실패 시 보관 해제
+            self.syncQ.async { self.downloadTasks.removeValue(forKey: normalized) }
+
             let end = CFAbsoluteTimeGetCurrent()
 
-            if let http = task.response as? HTTPURLResponse {
-                if !(200...299).contains(http.statusCode) {
-                    let err = NSError(
-                        domain: "NCPDownloader",
-                        code: http.statusCode,
-                        userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"]
-                    )
-                    completion(.failure(err))
-                    return
-                }
+            if let http = task.response as? HTTPURLResponse,
+               !(200...299).contains(http.statusCode) {
+                let err = NSError(domain: "NCPDownloader", code: http.statusCode,
+                                  userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"])
+                completion(.failure(err))
+                return
             }
             if let error = error {
                 completion(.failure(error))
@@ -146,13 +143,79 @@ final class NCPDownloader {
 
             completion(.success((localURL, bytesPerSec)))
         }
-        .continueWith { task in
-            if let err = task.error as NSError? {
+
+        // 태스크 생성 결과 저장(에러면 여기서 리턴)
+        taskAWSTask.continueWith { t in
+            if let err = t.error {
                 completion(.failure(err))
+            } else if let dlTask = t.result {
+                self.syncQ.async { self.downloadTasks[normalized] = dlTask }
             }
             return nil
         }
     }
+
+    /// 진행 중인 단일 파일 다운로드 취소. removePartial=true면 Caches의 부분 파일 삭제.
+    func cancel(fileName: String, removePartial: Bool = true, completion: (() -> Void)? = nil) {
+        let normalized = normalizeFileName(fileName)
+        let key = joinKey(prefix: cfg.keyPrefix, fileName: normalized)
+
+        // 1) 보관 중인 태스크 취소
+        var canceled = false
+        syncQ.sync {
+            if let t = downloadTasks.removeValue(forKey: normalized) {
+                t.cancel()
+                canceled = true
+            }
+        }
+
+        // 2) 보관 딕셔너리에 없으면 TransferUtility에서 검색해 취소(보조 루트)
+        if !canceled, let transfer = AWSS3TransferUtility.s3TransferUtility(forKey: transferKey) {
+            _ = transfer.getDownloadTasks().continueWith { task in
+                if let tasks = task.result as? [AWSS3TransferUtilityDownloadTask] {
+                    tasks.filter { $0.key == key }.forEach { $0.cancel() }
+                }
+                return nil
+            }
+        }
+
+        // 3) 부분 파일 정리
+        if removePartial {
+            let localURL = cachesURL(for: normalized)
+            try? FileManager.default.removeItem(at: localURL)
+        }
+
+        completion?()
+    }
+
+    /// 모든 진행 중인 다운로드 취소. removePartial=true면 부분 파일 전부 삭제.
+    func cancelAll(removePartial: Bool = true, completion: (() -> Void)? = nil) {
+        var files: [String] = []
+        syncQ.sync {
+            for (fname, task) in downloadTasks {
+                task.cancel()
+                files.append(fname)
+            }
+            downloadTasks.removeAll()
+        }
+
+        if removePartial {
+            files.forEach { try? FileManager.default.removeItem(at: cachesURL(for: $0)) }
+        }
+
+        // 보조: TransferUtility에 남은 태스크도 취소
+        if let transfer = AWSS3TransferUtility.s3TransferUtility(forKey: transferKey) {
+            _ = transfer.getDownloadTasks().continueWith { task in
+                if let tasks = task.result as? [AWSS3TransferUtilityDownloadTask] {
+                    tasks.forEach { $0.cancel() }
+                }
+                return nil
+            }
+        }
+
+        completion?()
+    }
+
 
     /// HEAD Object 로 단일 파일 사이즈 조회 (bytes). URL 오류 시 PreSigned HEAD로 폴백.
     func headSizeBytes(fileName: String, completion: @escaping (Result<Int64, Error>) -> Void) {
@@ -261,6 +324,12 @@ final class NCPDownloader {
         return "\(base).\(ext.lowercased())"
     }
 
+    private func cachesURL(for normalized: String) -> URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+            .first!
+            .appendingPathComponent(normalized, isDirectory: false)
+    }
+    
     /// PreSigned HEAD로 사이즈 조회 (엔드포인트 이슈 등 우회용)
     private func headSizeViaPresigned(fileName: String, completion: @escaping (Result<Int64, Error>) -> Void) {
         // ❗️이 SDK 버전에선 빌더가 non-optional
