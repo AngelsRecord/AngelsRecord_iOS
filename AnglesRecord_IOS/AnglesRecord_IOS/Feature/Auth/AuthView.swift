@@ -12,8 +12,8 @@ import FirebaseFirestore
 import FirebaseFunctions
 import FirebaseMessaging
 import SwiftData
+import UserNotifications
 
-// 로딩 단계를 위한 enum 추가
 enum LoadingPhase {
     case none
     case authenticating
@@ -25,6 +25,11 @@ struct AuthView: View {
     @State private var isAuthenticated = false
     @State private var errorMessage: String?
     @State private var loadingPhase: LoadingPhase = .none
+    @State private var showDownloadPrompt = false
+
+    // ✅ 추가: 용량 표시용 상태
+    @State private var estimatedDownloadMB: Double?
+    @State private var isEstimatingSize = false
 
     @EnvironmentObject var recordListViewModel: RecordListViewModel
     @Environment(\.modelContext) private var modelContext
@@ -36,47 +41,41 @@ struct AuthView: View {
                 .bold()
                 .padding(.trailing, 218)
                 .padding(.top, 74)
-            
+
             VStack {
-                SecureLimitedTextField(text: $code, isDisabled: .constant(loadingPhase != .none))  // isDisabled 바인딩 전달
+                SecureLimitedTextField(text: $code, isDisabled: .constant(loadingPhase != .none))
                     .frame(height: 64)
                     .padding(.top, 45)
-                    .onChange(of: code) { _ in
-                        errorMessage = nil
-                    }
-                
-                
-                
+                    .onChange(of: code) { _ in errorMessage = nil }
+
                 Spacer()
-                
+
                 ZStack {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture { self.endTextEditing() }
                 }
-                
+
                 if loadingPhase != .none {
                     Text(" ")
                         .foregroundColor(.gray)
                         .font(.system(size: 12))
-                } else if let errorMessage = errorMessage {
+                } else if let _ = errorMessage {
                     ToastMessage()
                 }
             }
-            // 수정된 버튼 부분: 로딩 단계에 따라 내용 동적으로 변경
-            Button(action: {
-                verifyCode(code)
-            }) {
+
+            Button(action: { verifyCode(code) }) {
                 if loadingPhase != .none {
-                    HStack(spacing: 8) {  // 로딩 인디케이터와 텍스트를 가로로 배치
-                        ProgressView()  // 동그란 로딩 스피너
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))  // 색상 맞춤 (흰색으로)
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         Text(loadingPhase == .authenticating ? "인증중..." : "에피소드 다운로드 중...")
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.buttonText)
                     }
                     .frame(width: 353, height: 64)
-                    .background(Color("buttonColor"))  // 로딩 중 비활성화 상태이므로 회색으로
+                    .background(Color("buttonColor"))
                     .cornerRadius(8)
                 } else {
                     Text("시작하기")
@@ -88,33 +87,37 @@ struct AuthView: View {
                 }
             }
             .padding(.bottom, 3)
-            .disabled(loadingPhase != .none || code.isEmpty)  // 로딩 중이거나 코드 비어 있으면 비활성화
+            .disabled(loadingPhase != .none || code.isEmpty)
         }
-        .onTapGesture {
-            self.endTextEditing()
-        }
-        .fullScreenCover(isPresented: $isAuthenticated) {
-            MainView()
+        .onTapGesture { self.endTextEditing() }
+        .fullScreenCover(isPresented: $isAuthenticated) { MainView() }
+        .alert("전체 에피소드를 다운로드할까요?", isPresented: $showDownloadPrompt) {
+            Button("지금 다운로드") {
+                beginDownloadAndProceed()
+            }
+            Button("나중에", role: .cancel) {
+                syncMetadataOnlyAndProceed()
+            }
+        } message: {
+            Text(
+                """
+                와이파이 환경을 권장해요. 나중에도 개별 혹은 전체로 다운로드할 수 있어요.
+                
+                \(sizeMessageLine())
+                """
+            )
         }
     }
 
-    /// AuthView 내부에서 호출되는 버튼 액션 함수
+    // MARK: - 인증 흐름
     func verifyCode(_ input: String) {
-        // UI 상태: 인증 단계 시작
         loadingPhase = .authenticating
         errorMessage = nil
-
         print("👉 [Auth] verify tapped:", input)
 
-        // onCall은 인증 컨텍스트가 있으면 더 안정적이므로 익명 로그인 보장
         let proceed: () -> Void = {
-            // 리전은 이 함수 안에서만 명시
             let functions = Functions.functions(region: "asia-northeast3")
-
-            // 1) 인증만 수행 (code만 전송)
-            let payload: [String: Any] = [
-                "code": input.trimmingCharacters(in: .whitespacesAndNewlines)
-            ]
+            let payload: [String: Any] = ["code": input.trimmingCharacters(in: .whitespacesAndNewlines)]
             print("📤 [Auth] calling verifyAccessCode:", payload)
 
             functions.httpsCallable("verifyAccessCode").call(payload) { result, error in
@@ -140,11 +143,9 @@ struct AuthView: View {
 
                 print("✅ [Auth] verify OK, channelId:", channelId)
 
-                // 2) 채널ID 키체인 저장
                 let status = KeychainHelper.save("verifiedAccessCode", value: channelId)
                 print("🔐 [Auth] keychain save:", status == errSecSuccess ? "success" : "fail(\(status))")
 
-                // 3) 가능한 경우 즉시 디바이스 등록 (토큰이 이미 있다면)
                 Messaging.messaging().token { token, _ in
                     if let token = token, !token.isEmpty {
                         let deviceId = DeviceIdManager.getOrCreate()
@@ -156,7 +157,6 @@ struct AuthView: View {
                             "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
                         ]
                         print("📤 [Auth] calling registerDevice:", regData)
-
                         functions.httpsCallable("registerDevice").call(regData) { regResult, regError in
                             if let regError = regError {
                                 print("❌ [Auth] registerDevice error:", regError.localizedDescription)
@@ -169,50 +169,12 @@ struct AuthView: View {
                     }
                 }
 
-                // 4) 에피소드 초기 동기화 & 화면 전환: 다운로드 단계로 전환
+                // ✅ 인증 성공 → 로딩 해제, 용량 계산 시작, 알림 표시
                 DispatchQueue.main.async {
-                    self.loadingPhase = .downloading  // 인증 성공 후 다운로드 단계로 변경
-                    
-                    // 직접 로컬 알림 스케줄 (다운로드 시작 알림)
-                    let content = UNMutableNotificationContent()
-                    content.title = "A'Cast"
-                    content.body = "에피소드가 백그라운드에서 다운로드 중입니다."
-                    content.sound = UNNotificationSound.default
-                    content.categoryIdentifier = "download"  // 플래그 스킵을 위한 카테고리
-                    
-                    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)  // 1초 딜레이
-                    let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
-                    
-                    UNUserNotificationCenter.current().add(request) { error in
-                        if let error = error {
-                            print("❌ 로컬 알림 스케줄 실패: \(error.localizedDescription)")
-                        } else {
-                            print("✅ 로컬 알림 스케줄 완료: 다운로드 진행 중")
-                        }
-                    }
-                    
-                    self.recordListViewModel.fetchAndSyncEpisodes(context: self.modelContext) { ok in
-                        // 다운로드 완료 알림 스케줄
-                        let completionContent = UNMutableNotificationContent()
-                        completionContent.title = "A'Cast"
-                        completionContent.body = "에피소드 다운로드가 끝났습니다."
-                        completionContent.sound = UNNotificationSound.default
-                        completionContent.categoryIdentifier = "download"  // 플래그 스킵을 위한 카테고리
-                        
-                        let completionTrigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)  // 1초 딜레이
-                        let completionRequest = UNNotificationRequest(identifier: UUID().uuidString, content: completionContent, trigger: completionTrigger)
-                        
-                        UNUserNotificationCenter.current().add(completionRequest) { error in
-                            if let error = error {
-                                print("❌ 로컬 알림 스케줄 실패 (완료 알림): \(error.localizedDescription)")
-                            } else {
-                                print("✅ 로컬 알림 스케줄 완료: 다운로드 완료")
-                            }
-                        }
-                        
-                        self.loadingPhase = .none
-                        self.isAuthenticated = true
-                    }
+                    self.loadingPhase = .none
+                    self.prepareDownloadEstimate(andThen: {
+                        self.showDownloadPrompt = true
+                    })
                 }
             }
         }
@@ -230,6 +192,91 @@ struct AuthView: View {
             proceed()
         }
     }
+
+    // MARK: - 다운로드 용량 계산/표시
+    // 기존: prepareDownloadEstimate()  → 아래처럼 교체
+    private func prepareDownloadEstimate(andThen onReady: @escaping () -> Void) {
+        // 이 플래그는 메시지에 안 쓰이게 되었지만, 재진입 방지용으로 그대로 둬도 됨
+        isEstimatingSize = true
+        estimatedDownloadMB = nil
+
+        recordListViewModel.estimateTotalDownloadBytes(context: modelContext) { totalBytes in
+            DispatchQueue.main.async {
+                if totalBytes < 0 {
+                    self.estimatedDownloadMB = nil   // 계산 불가 → 안내 문구만 표시
+                } else {
+                    self.estimatedDownloadMB = bytesToMB(totalBytes)
+                }
+                self.isEstimatingSize = false
+                onReady()
+            }
+        }
+    }
+
+    private func sizeMessageLine() -> String {
+        if isEstimatingSize { return "예상 다운로드 용량 계산 중…" }
+        if let mb = estimatedDownloadMB {
+            return "예상 다운로드 용량: \(formatMB(mb)) MB"
+        }
+        return "예상 다운로드 용량: 계산 불가"
+    }
+
+    private func bytesToMB(_ bytes: Int64) -> Double {
+        Double(bytes) / 1_048_576.0 // 1024 * 1024
+    }
+
+    private func formatMB(_ mb: Double) -> String {
+        if mb >= 1024 {
+            // 1GB 이상이면 GB로 표기
+            let gb = mb / 1024.0
+            return String(format: "%.2f (%.2f GB)", mb, gb)
+        } else {
+            return String(format: "%.1f", mb)
+        }
+    }
+
+    // MARK: - “지금 다운로드” → 기존 흐름 유지
+    private func beginDownloadAndProceed() {
+        DispatchQueue.main.async {
+            self.loadingPhase = .downloading
+
+            let content = UNMutableNotificationContent()
+            content.title = "A'Cast"
+            content.body = "에피소드가 백그라운드에서 다운로드 중입니다."
+            content.sound = UNNotificationSound.default
+            content.categoryIdentifier = "download"
+
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+            UNUserNotificationCenter.current().add(request)
+
+            self.recordListViewModel.fetchAndSyncEpisodes(context: self.modelContext) { _ in
+                let completionContent = UNMutableNotificationContent()
+                completionContent.title = "A'Cast"
+                completionContent.body = "에피소드 다운로드가 끝났습니다."
+                completionContent.sound = UNNotificationSound.default
+                completionContent.categoryIdentifier = "download"
+
+                let completionTrigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+                let completionRequest = UNNotificationRequest(identifier: UUID().uuidString,
+                                                              content: completionContent,
+                                                              trigger: completionTrigger)
+                UNUserNotificationCenter.current().add(completionRequest)
+
+                self.loadingPhase = .none
+                self.isAuthenticated = true
+            }
+        }
+    }
+
+    // MARK: - “나중에” → 메타데이터만 동기화 후 메인으로
+    private func syncMetadataOnlyAndProceed() {
+        recordListViewModel.syncEpisodesMetadataOnly(context: modelContext) { _ in
+            DispatchQueue.main.async {
+                self.isAuthenticated = true
+            }
+        }
+    }
 }
 
 // MARK: - 키보드 내리기 유틸
@@ -237,24 +284,5 @@ extension View {
     func endTextEditing() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
-    }
-}
-
-#Preview {
-    // 1. SwiftData Preview용 ModelContainer 생성
-    do {
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: RecordListModel.self, configurations: config)
-
-        // 2. Preview 전용 ViewModel 생성
-        let previewViewModel = RecordListViewModel()
-
-        // 3. AuthView에 환경 객체 주입
-        return AuthView()
-            .environmentObject(previewViewModel)
-            .modelContainer(container)
-    } catch {
-        // 4. 실패 시 기본 View만 반환
-        return AuthView()
     }
 }

@@ -81,8 +81,8 @@ struct RecordListView: View {
         print("🚀 [\(TS())] refreshNow 시작 by \(trigger)")
 
         await withCheckedContinuation { cont in
-            viewModel.fetchAndSyncEpisodes(context: modelContext) { ok in
-                print("🧩 [\(TS())] fetchAndSyncEpisodes 완료 ok=\(ok)")
+            viewModel.syncEpisodesMetadataOnly(context: modelContext) { ok in
+                print("🧩 [\(TS())] syncEpisodesMetadataOnly 완료 ok=\(ok)")
                 // 완료 이후 살짝 늦춰서 UI 반영 여유
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     cont.resume()

@@ -6,6 +6,8 @@ struct PlayerView: View {
     @State public var record: RecordListModel
     @ObservedObject public var audioPlayer: AudioPlayerManager
     var onDismiss: () -> Void
+    @EnvironmentObject private var recordListViewModel: RecordListViewModel
+    private let episodeFileName: String?
 
     // 전역 재생 큐
     @EnvironmentObject private var playQueue: PlayQueueManager
@@ -35,12 +37,22 @@ struct PlayerView: View {
     private var volumeObserver = SystemVolumeObserver()
 
     // MARK: - Init
-    public init(record: RecordListModel, audioPlayer: AudioPlayerManager, onDismiss: @escaping () -> Void) {
+    public init(record: RecordListModel,
+        audioPlayer: AudioPlayerManager,
+        onDismiss: @escaping () -> Void,
+        episodeFileName: String? = nil) {
         _record = State(initialValue: record)
         self.record = record
         self.audioPlayer = audioPlayer
         self.onDismiss = onDismiss
+        self.episodeFileName = episodeFileName
     }
+    
+    private var isDownloading: Bool {
+           let fn = episodeFileName ?? record.fileURL?.lastPathComponent
+           guard let fn else { return false }
+           return recordListViewModel.isDownloading(fileName: fn)
+   }
 
     // MARK: - Body
     public var body: some View {
@@ -58,7 +70,7 @@ struct PlayerView: View {
                 // MARK: - 현재 재생 카드
                 VStack(spacing: 0) {
                     HStack(alignment: .top, spacing: 0) {
-                        Image("mainimage_yet")
+                        (isDownloading ? Image("tempcover2") : Image("mainimage_yet"))
                             .resizable()
                             .aspectRatio(1, contentMode: .fit)
                             .matchedGeometryEffect(id: "coverImage", in: animation)
@@ -76,7 +88,7 @@ struct PlayerView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
                                     MarqueeText(
-                                        text: record.title,
+                                       text: isDownloading ? "로드 중..." : record.title,
                                         font: .systemFont(ofSize: 16, weight: .semibold),
                                         leftFade: 16,
                                         rightFade: 16,
@@ -124,7 +136,7 @@ struct PlayerView: View {
                             HStack(alignment: .top) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     MarqueeText(
-                                        text: record.title,
+                                        text: isDownloading ? "로드 중..." : record.title,
                                         font: UIFont.SFPro.SemiBold.s16,
                                         leftFade: 16,
                                         rightFade: 16,
@@ -198,31 +210,68 @@ struct PlayerView: View {
                 Spacer()
 
                 VStack(spacing: 0) {
-                    PlaybackSliderView(
-                        value: $sliderValue,
-                        duration: audioPlayer.duration,
-                        isDragging: $isDragging,
-                        onSeek: { newValue in audioPlayer.seek(to: newValue) },
-                        displayedTime: $displayedTime,
-                        audioPlayer: audioPlayer,
-                        trackKey: trackKey
-                    )
-                    .id(trackKey)
-                    .onReceive(audioPlayer.$currentTime) { newValue in
-                        if !isDragging {
-                            withAnimation(.linear(duration: 0.2)) {
-                                sliderValue = newValue
-                            }
-                            displayedTime = newValue
+                    // ⬇️ 슬라이더 부분 전체 교체
+                    Group {
+                        if isDownloading {
+                            PlaybackSliderView(
+                                value: .constant(0),
+                                duration: 1,                  // 0 방지
+                                isDragging: .constant(false),
+                                onSeek: { _ in },
+                                displayedTime: .constant(0),
+                                audioPlayer: audioPlayer,
+                                trackKey: trackKey
+                            )
+                            .allowsHitTesting(false)
+                        } else {
+                            PlaybackSliderView(
+                                value: $sliderValue,
+                                duration: max(audioPlayer.duration, 0.1),
+                                isDragging: $isDragging,
+                                onSeek: { newValue in audioPlayer.seek(to: newValue) },
+                                displayedTime: $displayedTime,
+                                audioPlayer: audioPlayer,
+                                trackKey: trackKey
+                            )
                         }
                     }
-//                    .padding(.horizontal, 14)
+                    .id("\(trackKey)-\(isDownloading ? "loading" : "ready")")
+
+                    // ✅ 재생 진행 반영(다운로드 아닐 때만)
+                    .onReceive(audioPlayer.$currentTime) { newValue in
+                        guard !isDragging, !isDownloading else { return }
+                        // 애니메이션 없이 스냅 업데이트 (튀는 현상 방지)
+                        var t = Transaction(); t.disablesAnimations = true
+                        withTransaction(t) {
+                            let dur = max(audioPlayer.duration, 0)
+                            let clamped = max(0, min(newValue, dur))
+                            sliderValue = clamped
+                            displayedTime = clamped
+                        }
+                    }
+
+                    // ✅ 로딩 진입/트랙 교체 시 0으로 리셋
+                    .onChange(of: isDownloading) { loading in
+                        if loading {
+                            var t = Transaction(); t.disablesAnimations = true
+                            withTransaction(t) {
+                                sliderValue = 0
+                                displayedTime = 0
+                            }
+                        }
+                    }
+                    .onChange(of: trackKey) { _ in
+                        var t = Transaction(); t.disablesAnimations = true
+                        withTransaction(t) {
+                            sliderValue = 0
+                            displayedTime = 0
+                        }
+                    }
+
+                    // (네가 쓰던 오버레이/그라데이션 그대로 유지)
                     .overlay(alignment: .top) {
                         LinearGradient(
-                            colors: [
-                                Color.background.opacity(0.0),
-                                Color.background
-                            ],
+                            colors: [Color.background.opacity(0.0), Color.background],
                             startPoint: .top, endPoint: .bottom
                         )
                         .frame(height: 36)
@@ -312,6 +361,7 @@ struct PlayerView: View {
                     .animation(.easeInOut(duration: 0.2), value: isDragging)
                     .padding(.top, 12)
                 }
+                .disabled(isDownloading)
                 .padding(.bottom, 24)
                 .frame(maxWidth: .infinity)
                 .background(

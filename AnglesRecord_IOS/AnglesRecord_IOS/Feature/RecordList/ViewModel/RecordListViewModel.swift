@@ -14,6 +14,12 @@ final class RecordListViewModel: NSObject, ObservableObject {
     // MARK: - Public State
     @Published var episodes: [EpisodeModel] = []
     @Published var isLoadingEpisodes: Bool = false
+    
+    @Published var activeDownloads: Set<String> = []
+    @Published var downloadProgress: [String: Double] = [:]
+    
+    private let stalenessThreshold: TimeInterval = 86_400 // 24h
+    private let enableSkipLogs = false
 
     // MARK: - Config (B안: "/$()/" → "//")
     private func read(_ key: String) -> String {
@@ -159,19 +165,56 @@ final class RecordListViewModel: NSObject, ObservableObject {
         return documentsURL(for: fileName)
     }
 
-    private func shouldDownload(to localURL: URL, uploadedAt: Date) -> Bool {
-        if !FileManager.default.fileExists(atPath: localURL.path) {
-            print("⬇️ [\(TS())] 로컬 없음 → 다운로드 필요: \(localURL.lastPathComponent)")
+    
+    func isDownloading(fileName: String) -> Bool {
+        activeDownloads.contains(fileName)
+    }
+
+    func progress(for fileName: String) -> Double {
+        downloadProgress[fileName] ?? 0.0
+    }
+
+    func isDownloaded(_ episode: EpisodeModel) -> Bool {
+        let url = getLocalFileURL(for: episode.fileName)
+        return !shouldDownload(to: url, uploadedAt: episode.uploadedAt, log: false)
+    }
+
+    // 실제 다운로드 판단: 여기만 로그ON
+    func downloadIfNeeded(fileName: String, uploadedAt: Date, completion: @escaping (Bool) -> Void) {
+        let localURL = getLocalFileURL(for: fileName)
+        if shouldDownload(to: localURL, uploadedAt: uploadedAt, log: true) {
+            downloadOne(fileName: fileName, uploadedAt: uploadedAt, completion: completion)
+        } else {
+            completion(true)
+        }
+    }
+    
+    private func shouldDownload(to localURL: URL, uploadedAt: Date, log: Bool = false) -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: localURL.path) else {
+            if log { print("⚠️ [\(TS())] 로컬 없음 → 다운로드") }
             return true
         }
-        if let attr = try? FileManager.default.attributesOfItem(atPath: localURL.path),
-           let modified = attr[.modificationDate] as? Date {
-            let need = modified < uploadedAt
-            print("\(need ? "⚠️" : "✅") [\(TS())] 수정일 비교: local=\(modified) vs up=\(uploadedAt) → \(need ? "다운로드" : "유지")")
-            return need
+
+        guard let attr = try? fm.attributesOfItem(atPath: localURL.path),
+              let modified = attr[.modificationDate] as? Date else {
+            if log { print("⚠️ [\(TS())] 수정일 조회 실패 → 다운로드") }
+            return true
         }
-        return true
+
+        let delta = uploadedAt.timeIntervalSince(modified)
+
+        if delta >= stalenessThreshold {
+            if log { print("⚠️ [\(TS())] 수정일 비교: local=\(modified) vs up=\(uploadedAt) (Δ=\(Int(delta))s) → 다운로드") }
+            return true
+        } else {
+            if log && enableSkipLogs {
+                print("ℹ️ [\(TS())] 수정일 비교: local=\(modified) vs up=\(uploadedAt) (Δ=\(Int(delta))s) → 스킵(24h 미만)")
+            }
+            return false
+        }
     }
+
 
     // MARK: - Serial Download Queue
     private func downloadSequentially(
@@ -193,37 +236,247 @@ final class RecordListViewModel: NSObject, ObservableObject {
             )
         }
     }
+    
+    // MARK: - Metadata only sync (no audio downloads)
+    func syncEpisodesMetadataOnly(context: ModelContext, completion: @escaping (Bool) -> Void) {
+        print("🛈 [\(TS())] Firestore 메타데이터 동기화 시작 (오디오 다운로드 없음)")
 
+        let db = Firestore.firestore()
+        db.collection("episodes").getDocuments { snapshot, error in
+            if let error = error {
+                print("❌ [\(TS())] Firestore fetch 실패: \(error.localizedDescription)")
+                completion(false)
+                return
+            }
+            guard let docs = snapshot?.documents else {
+                print("⚠️ [\(TS())] 문서 없음")
+                completion(false)
+                return
+            }
+
+            DispatchQueue.main.async {
+                var changed = 0
+
+                for d in docs {
+                    do {
+                        let ep = try d.data(as: Episode.self)
+
+                        let existing = try? context
+                            .fetch(FetchDescriptor<EpisodeModel>(predicate: #Predicate { $0.id == ep.id }))
+                            .first
+
+                        let mustUpdate = (existing == nil) || (existing!.uploadedAt < ep.uploadedAt)
+                        if mustUpdate {
+                            if let ex = existing { context.delete(ex) }
+                            let model = EpisodeModel(
+                                id: ep.id,
+                                title: ep.title,
+                                desc: ep.description,
+                                uploadedAt: ep.uploadedAt,
+                                fileName: ep.fileName
+                            )
+                            context.insert(model)
+                            changed += 1
+                        }
+                    } catch {
+                        print("❌ [\(TS())] 파싱 실패(\(d.documentID)): \(error.localizedDescription)")
+                    }
+                }
+
+                do {
+                    try context.save()
+                } catch {
+                    print("❌ [\(TS())] SwiftData 저장 실패(메타동기화): \(error.localizedDescription)")
+                }
+
+                self.loadLocalEpisodes(context: context)
+                print("✅ [\(TS())] 메타데이터 동기화 완료, 변경 \(changed)건")
+                completion(true)
+            }
+        }
+    }
+
+    // MARK: - Estimate total download size (bytes) for items needing download
+    func estimateTotalDownloadBytes(context: ModelContext, completion: @escaping (Int64) -> Void) {
+        print("🧮 [\(TS())] 다운로드 예상 용량 계산 시작 (S3 메타 기반)")
+
+        let db = Firestore.firestore()
+        db.collection("episodes").getDocuments { snapshot, error in
+            if let error = error {
+                print("❌ [\(TS())] Firestore fetch 실패(estimate): \(error.localizedDescription)")
+                completion(-1)
+                return
+            }
+            guard let docs = snapshot?.documents else {
+                print("⚠️ [\(TS())] 문서 없음(estimate)")
+                completion(0)
+                return
+            }
+
+            // 1) 다운로드 필요한 파일만 추출
+            var need: [String] = [] // fileName 목록
+            for d in docs {
+                if let ep = try? d.data(as: Episode.self) {
+                    let dst = self.documentsURL(for: ep.fileName)
+                    if self.shouldDownload(to: dst, uploadedAt: ep.uploadedAt) {
+                        need.append(ep.fileName)
+                    }
+                }
+            }
+            if need.isEmpty {
+                print("ℹ️ [\(TS())] 다운로드 필요 항목 없음")
+                completion(0)
+                return
+            }
+
+            // 2) S3에서 prefix 전체를 리스트로 가져와 파일명→사이즈 매핑
+            self.downloader.listObjectSizes { listResult in
+                switch listResult {
+                case .failure(let err):
+                    print("⚠️ [\(TS())] listObjects 실패: \(err.localizedDescription) → HEAD로 대체")
+                    // 전체를 HEAD로
+                    self.sumByHEAD(fileNames: need, completion: completion)
+
+                case .success(let sizeMap):
+                    // 3) 매핑으로 빠르게 합산, 누락분만 HEAD
+                    var total: Int64 = 0
+                    var missing: [String] = []
+
+                    func normalized(_ name: String) -> String {
+                        // downloader의 normalize와 동일하게 확장자 소문자화
+                        let ns = name as NSString
+                        let ext = ns.pathExtension
+                        guard !ext.isEmpty else { return name }
+                        return "\(ns.deletingPathExtension).\(ext.lowercased())"
+                    }
+
+                    for name in need {
+                        let n = normalized(name)
+                        if let v = sizeMap[n] ?? sizeMap[name] {
+                            total &+= v
+                        } else {
+                            missing.append(name)
+                        }
+                    }
+
+                    if missing.isEmpty {
+                        print("✅ [\(TS())] 예상 총 용량(bytes): \(total) (LIST 기반)")
+                        DispatchQueue.main.async { completion(total) }
+                    } else {
+                        print("ℹ️ [\(TS())] LIST에 없는 \(missing.count)건 → HEAD로 보완")
+                        self.sumByHEAD(fileNames: missing) { headBytes in
+                            if headBytes < 0 {
+                                DispatchQueue.main.async { completion(total > 0 ? total : -1) }
+                            } else {
+                                DispatchQueue.main.async { completion(total &+ headBytes) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// HEAD 요청으로 여러 파일의 사이즈 합산 (동시성 제한 4)
+    private func sumByHEAD(fileNames: [String], completion: @escaping (Int64) -> Void) {
+        if fileNames.isEmpty { completion(0); return }
+        let group = DispatchGroup()
+        let sem = DispatchSemaphore(value: 4)
+
+        var total: Int64 = 0
+        var allFailed = true
+
+        for f in fileNames {
+            group.enter()
+            sem.wait()
+            downloader.headSizeBytes(fileName: f) { result in
+                switch result {
+                case .success(let bytes):
+                    total &+= bytes
+                    allFailed = false
+                case .failure(let e):
+                    print("⚠️ [\(TS())] HEAD 실패: \(f) → \(e.localizedDescription)")
+                }
+                sem.signal()
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .global()) {
+            if allFailed {
+                completion(-1)
+            } else {
+                completion(total)
+            }
+        }
+    }
+
+
+
+    /// 단일 파일 다운로드 (Caches → Documents 이동, 수정일 = uploadedAt)
+    /// 진행률은 `downloadProgress[fileName]` (0.0~1.0), 상태는 `activeDownloads`로 브로드캐스트
     private func downloadOne(fileName: String, uploadedAt: Date, completion: @escaping (Bool) -> Void) {
-        // NCPDownloader는 Caches에 저장 → 완료 후 Documents로 이동
+        // 다운로드 시작: 상태 초기화
+        DispatchQueue.main.async {
+            self.activeDownloads.insert(fileName)
+            self.downloadProgress[fileName] = 0.0
+        }
+
+        // NCPDownloader는 Caches에 저장하고, 완료되면 localURL 반환한다고 가정
         downloader.download(fileName: fileName, progress: { frac in
+            // 진행률 반영 (0.0 ~ 1.0)
+            DispatchQueue.main.async {
+                self.downloadProgress[fileName] = frac
+            }
             let p = Int(frac * 100)
             if p % 10 == 0 { print("📊 [\(TS())] 진행률 \(p)%: \(fileName)") }
         }) { result in
             switch result {
             case .failure(let err):
+                DispatchQueue.main.async {
+                    self.activeDownloads.remove(fileName)
+                    self.downloadProgress[fileName] = 0.0
+                }
                 print("❌ [\(TS())] 다운로드 실패: \(fileName), \(err.localizedDescription)")
-                completion(false)
+                DispatchQueue.main.async { completion(false) }
 
             case .success(let out):
                 let finalURL = self.documentsURL(for: fileName)
                 do {
+                    // 기존 파일이 있으면 삭제
                     if FileManager.default.fileExists(atPath: finalURL.path) {
                         try FileManager.default.removeItem(at: finalURL)
                     }
+                    // 상위 폴더 보장
+                    try FileManager.default.createDirectory(at: finalURL.deletingLastPathComponent(),
+                                                            withIntermediateDirectories: true,
+                                                            attributes: nil)
+                    // Caches → Documents 이동
                     try FileManager.default.moveItem(at: out.localURL, to: finalURL)
-                    // 다음 비교를 위해 파일 수정일을 업로드일로 맞춤
+
+                    // 다음 비교를 위해 파일 수정일을 업로드 시각으로 맞춤
                     try FileManager.default.setAttributes(
                         [.modificationDate: uploadedAt],
                         ofItemAtPath: finalURL.path
                     )
+
+                    DispatchQueue.main.async {
+                        self.downloadProgress[fileName] = 1.0
+                        self.activeDownloads.remove(fileName)
+                    }
                     print("✅ [\(TS())] 저장 완료: \(fileName) → Documents")
-                    completion(true)
+                    DispatchQueue.main.async { completion(true) }
+
                 } catch {
-                    print("❌ [\(TS())] 파일 이동 실패: \(fileName), \(error.localizedDescription)")
-                    completion(false)
+                    DispatchQueue.main.async {
+                        self.activeDownloads.remove(fileName)
+                        self.downloadProgress[fileName] = 0.0
+                    }
+                    print("❌ [\(TS())] 파일 이동/속성 설정 실패: \(fileName), \(error.localizedDescription)")
+                    DispatchQueue.main.async { completion(false) }
                 }
             }
         }
     }
+
 }
