@@ -1,6 +1,6 @@
-import SwiftUI
-import SwiftData
 import AVFoundation
+import SwiftData
+import SwiftUI
 
 private func TS() -> String {
     let f = DateFormatter()
@@ -25,12 +25,17 @@ struct MainView: View {
     @State private var showingPlayerView = false
     @State private var isLoading = false
     @State private var isRefreshing = false
+
+    @State private var showingReport = false
+    
+
     @State private var pendingTapToken: UUID? = nil
     // 미니플레이어에서 다운로드 상태 감지용(파일명)
     @State private var miniPlayerEpisodeFileName: String? = nil
 
 
     var body: some View {
+
         ZStack(alignment: .bottom) {
             
             GeometryReader { geometry in
@@ -46,9 +51,51 @@ struct MainView: View {
             .allowsHitTesting(false)
             ScrollView {
                 VStack(spacing: 0) {
+
+                    HStack {
+                        Spacer() // 오른쪽 끝으로 밀기
+                        HStack(spacing: 16) {
+                            RefreshButton(isRefreshing: $isRefreshing) {
+                                Task { await refreshNow(trigger: "manual") }
+                            }
+                            
+                            Menu {
+                                // 1. 에이캐스트 설정 → 앱 자체 설정 화면
+                                Button("에이케스트 설정") {
+                                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                                        UIApplication.shared.open(url)
+                                    }
+                                }
+                                
+                                // 2. 알림 설정 → 앱 알림 화면 (실제로는 앱 설정 화면까지 이동 가능)
+                                Button("알림 설정") {
+                                    let url = URL(string: UIApplication.openNotificationSettingsURLString)!
+                                    UIApplication.shared.open(url)
+                                }
+                                
+                                Divider()
+                                
+                                // 3. 문제 리포트 → 커스텀 액션 (아이콘 포함)
+                                Button {
+                                    showingReport = true
+                                } label: {
+                                    Label("문제 리포트", systemImage: "exclamationmark.bubble")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle.fill")
+                                    .resizable()
+                                    .frame(width: 28, height: 28)
+                                    .foregroundColor(Color("subText"))
+                            }
+                        }
+                        .padding(.trailing, 20)
+                    }
+                    .padding(.top, 8)
                     
                     podcastMainSection
+
                     descriptionSection
+
                     
                     Divider().padding(.horizontal)
                     
@@ -91,6 +138,11 @@ struct MainView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingReport) {
+            ReportSheet(
+                onClose: { showingReport = false }
+            )
+        }
         .fileImporter(
             isPresented: $showingFilePicker,
             allowedContentTypes: [.audio],
@@ -119,6 +171,7 @@ struct MainView: View {
     }
     
     // MARK: - 새로고침 (completion 기반으로 정확히 대기)
+    
     private func refreshNow(trigger: String) async {
         guard !isRefreshing else {
             print("⏳ [\(TS())] refreshNow(\(trigger)) SKIP: 이미 진행 중")
@@ -146,6 +199,7 @@ struct MainView: View {
     }
     
     // MARK: - 1회 백필
+    
     /// 기존에 저장된 RecordListModel 중 uploadedAt이 비어있는 항목을 채움.
     /// - 우선순위: 파일명 매칭 → 제목 매칭 → 기존 addedDate
     private func backfillUploadedAtOnceIfNeeded() {
@@ -169,6 +223,7 @@ struct MainView: View {
             
             for rec in records {
                 if rec.uploadedAt != nil { continue }
+
                 var matchedDate: Date? = nil
                 if let url = rec.fileURL {
                     let name = url.lastPathComponent
@@ -176,11 +231,11 @@ struct MainView: View {
                         matchedDate = ep.uploadedAt
                     }
                 }
-
+                
                 if matchedDate == nil, let ep = episodeByTitle[rec.title] {
                     matchedDate = ep.uploadedAt
                 }
-
+                
                 rec.uploadedAt = matchedDate ?? rec.addedDate
                 patched += 1
             }
@@ -204,7 +259,7 @@ struct MainView: View {
                 .frame(width: 200, height: 200)
                 .cornerRadius(8)
                 .padding(.top, 41)
-          
+
             Text("전지적 씨팝 시점: 전팝시")
                 .font(Font.SFPro.SemiBold.s16)
                 .foregroundColor(Color("mainText"))
@@ -232,6 +287,7 @@ struct MainView: View {
         }
     }
     
+
     private var descriptionSection: some View {
         Text("친구랑 수다 떠는 듯 편안하게, 때론 진지하게.\n에이캐스트가 매주 수요일, 새로운 에피소드로 찾아옵니다.")
             .font(Font.SFPro.Regular.s14)
@@ -241,6 +297,7 @@ struct MainView: View {
             .padding(.bottom, 29)
     }
     
+
     private var loadingSection: some View {
         VStack(spacing: 20) {
             Spacer()
@@ -278,6 +335,7 @@ struct MainView: View {
                 .font(Font.SFPro.SemiBold.s12)
                 .foregroundColor(Color("subText"))
             
+
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text(episode.title)
                         .font(Font.SFPro.SemiBold.s16)
@@ -291,7 +349,7 @@ struct MainView: View {
                     }
                 }
                 .frame(width: 345, alignment: .leading)
-            
+          
             Text(episode.desc)
                 .font(Font.SFPro.Regular.s14)
                 .foregroundColor(Color("subText"))
@@ -353,6 +411,7 @@ struct MainView: View {
             }
         }
     }
+
 
     // 파일명/타이틀에서 "에피소드 번호"를 추출 (ep.14, EP 14, e14, 14 등 유연하게)
     private func episodeNumber(of ep: EpisodeModel) -> Int? {
@@ -440,6 +499,7 @@ struct MainView: View {
     
     // 큐의 current를 실제로 재생하고, 리모컨 next/prev도 큐와 연동
     private func playFromQueue() {
+
         guard let toPlay = playQueue.current else { return }
         withAnimation(.spring()) {
             selectedRecord = toPlay
@@ -463,7 +523,7 @@ struct MainView: View {
             }
         }
     }
-
+    
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
@@ -479,6 +539,7 @@ struct MainView: View {
                 
                 let asset = AVURLAsset(url: destinationURL)
                 let duration = CMTimeGetSeconds(asset.duration)
+
                 let newRecord = RecordListModel(
                     title: url.deletingPathExtension().lastPathComponent,
                     artist: "Unknown Artist",
@@ -500,9 +561,11 @@ struct MainView: View {
     }
     
     private func playNextEpisode() {
+
         guard playQueue.hasNext else { return }
         playQueue.advance()
         playFromQueue()
+
     }
     
     private func deleteRecord(_ record: RecordListModel) {
@@ -519,6 +582,185 @@ struct MainView: View {
         modelContext.delete(record)
         try? modelContext.save()
     }
+
+    // MARK: - UI Components
+    
+    private struct RefreshButton: View {
+        @Binding var isRefreshing: Bool
+        var action: () -> Void
+        
+        @State private var spin = false
+        
+        var body: some View {
+            Button {
+                guard !isRefreshing else { return }
+                action()
+            } label: {
+                ZStack {
+                    if isRefreshing {
+                        // Background circle track
+                        Circle()
+                            .stroke(Color.white, lineWidth: 4)
+                            .frame(width: 28, height: 28)
+                        
+                        // Rotating arc
+                        Circle()
+                            .trim(from: 0, to: 0.28)
+                            .stroke(
+                                Color("subText"),
+                                style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                            )
+                            .frame(width: 28, height: 28)
+                            .rotationEffect(.degrees(spin ? 360 : 0))
+                            .animation(
+                                isRefreshing
+                                    ? .linear(duration: 1.0).repeatForever(autoreverses: false)
+                                    : .default,
+                                value: spin
+                            )
+                            .onAppear { spin = true }
+                            .onDisappear { spin = false }
+                        
+                        // Stop square inside
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.white)
+                            .frame(width: 8, height: 8)
+                    } else {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .resizable()
+                            .frame(width: 28, height: 28)
+                            .foregroundColor(Color("subText"))
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isRefreshing ? "다운로드 중" : "새로고침")
+        }
+    }
+    
+    // MARK: - Report Sheet
+    
+    private struct ReportSheet: View {
+        @Environment(\.dismiss) private var dismiss
+        @State private var title: String = ""
+        @State private var detail: String = ""
+        @State private var includeDiagnostics: Bool = true
+        @State private var email: String = ""
+        
+        var onClose: () -> Void
+        
+        var body: some View {
+            NavigationView {
+                Form {
+                    Section(header: Text("제목")) {
+                        TextField("문제 제목 (필수)", text: $title)
+                            .textInputAutocapitalization(.never)
+                    }
+                    
+                    Section(header: Text("설명")) {
+                        TextEditor(text: $detail)
+                            .frame(minHeight: 120)
+                            .overlay(
+                                Group {
+                                    if detail.isEmpty {
+                                        Text("내용을 작성해주세요.")
+                                            .foregroundColor(.secondary)
+                                            .padding(.top, 8)
+                                            .padding(.leading, 4)
+                                        Spacer(minLength: 0)
+                                    }
+                                }, alignment: .topLeading
+                            )
+                    }
+
+                    Section {
+                        Toggle("진단 정보 포함 (기기/OS/앱 버전)", isOn: $includeDiagnostics)
+                    } footer: {
+                        Text("개인 데이터는 수집하지 않습니다.")
+                    }
+                    
+                    ZStack(alignment: .leading) {
+                        if email.isEmpty {
+                            Text("your@email.com")
+                                .tint(.gray)
+                                .padding(.leading, 4)
+                        }
+                        TextField("", text: $email)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    
+                    Section {
+                        Button {
+                            sendEmail()
+                        } label: {
+                            Label("이메일로 보내기", systemImage: "envelope")
+                        }
+                        .disabled(
+                            title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                                detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+                    }
+                }
+                .navigationTitle("문제 리포트")
+                .navigationBarTitleDisplayMode(.inline)
+//                .onTapGesture { endTextEditing() }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("닫기") {
+                            onClose()
+                            dismiss()
+                        }
+                    }
+                }
+            }
+        }
+        
+        private func sendEmail() {
+            let to = "se020122@naver.com"
+            let subject = "[Report] \(title)"
+            var body = detail
+            
+            if includeDiagnostics {
+                let diag = diagnosticsBlock()
+                body += "\n\n---- 진단 정보 ----\n\(diag)"
+            }
+            if !email.trimmingCharacters(in: .whitespaces).isEmpty {
+                body += "\n\n회신 이메일: \(email)"
+            }
+            
+            let comps = mailtoURL(to: to, subject: subject, body: body)
+            if let url = comps, UIApplication.shared.canOpenURL(url) {
+                UIApplication.shared.open(url)
+            }
+            onClose()
+            dismiss()
+        }
+        
+        private func diagnosticsBlock() -> String {
+            let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+            let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
+            let os = UIDevice.current.systemVersion
+            let model = UIDevice.current.model
+            let ts = ISO8601DateFormatter().string(from: Date())
+            return """
+            App \(version) (\(build))
+            iOS \(os), \(model)
+            Time \(ts)
+            """
+        }
+        
+        private func mailtoURL(to: String, subject: String, body: String) -> URL? {
+            var components = URLComponents()
+            components.scheme = "mailto"
+            components.path = to
+            components.queryItems = [
+                URLQueryItem(name: "subject", value: subject),
+                URLQueryItem(name: "body", value: body)
+            ]
+            return components.url
+        }
     
     // 탭 즉시 미니플레이어를 띄우기 위한 임시(비영구) 레코드
     private func makeTempRecord(from ep: EpisodeModel) -> RecordListModel {
