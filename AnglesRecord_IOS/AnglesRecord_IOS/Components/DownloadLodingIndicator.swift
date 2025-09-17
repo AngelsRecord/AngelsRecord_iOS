@@ -8,53 +8,43 @@
 import SwiftUI
 
 struct DownloadLoadingIndicator: View {
-    @State private var isDownloading = false
-    @State private var progress: CGFloat = 0
-    @State private var isCompleted = false
+    @EnvironmentObject var recordListViewModel: RecordListViewModel
+    let episode: EpisodeModel
     
     var body: some View {
-        Button(action: startDownload) {
-            if isCompleted {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.subText)
-            } else if isDownloading {
-                ZStack {
-                        Circle()
-                        .stroke(.subText, lineWidth: 2)
-                        .frame(width: 12, height: 12)
-                    
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(.mainBlue, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .frame(width: 12, height: 12)
-                }
-            } else {
+        
+        if recordListViewModel.isDownloading(fileName: episode.fileName) {
+            let p = recordListViewModel.progress(for: episode.fileName)
+            if p <= 0.0001 {
                 Image(systemName: "circle.dashed")
                     .font(.system(size: 12))
                     .foregroundColor(.gray)
+            } else {
+                ring(progress: p)
             }
+        } else if recordListViewModel.isDownloaded(episode) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.subText)
+        } else {
+            EmptyView()
         }
-        .buttonStyle(.plain)
     }
     
-    private func startDownload() {
-        guard !isDownloading && !isCompleted else { return }
-        isDownloading = true
-        progress = 0
-        
-        withAnimation(.linear(duration: 2)) {
-            progress = 1.0
-        }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            isDownloading = false
-            isCompleted = true
+    @ViewBuilder
+    private func ring(progress: Double) -> some View {
+        ZStack {
+            Circle()
+                .stroke(.subText, lineWidth: 2)
+                .frame(width: 12, height: 12)
+            
+            Circle()
+                .trim(from: 0, to: min(max(progress, 0),1))
+                .stroke(.mainBlue, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .frame(width: 12, height: 12)
+                .animation(.linear(duration: 2), value: progress)
         }
     }
 }
 
-#Preview {
-    DownloadLoadingIndicator()
-}
