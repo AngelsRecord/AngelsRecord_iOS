@@ -336,16 +336,16 @@ struct MainView: View {
                 .foregroundColor(Color("subText"))
             
             
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
+            HStack(alignment: .center, spacing: 2) {
                 Text(episode.title)
                     .font(Font.SFPro.SemiBold.s16)
                     .foregroundColor(Color("mainText"))
                     .lineLimit(2)
+                    .padding(.trailing, 6)
                 
                 if recordListViewModel.isDownloading(fileName: episode.fileName)
                     || recordListViewModel.isDownloaded(episode) {
-                    ExampleEpDownBadge(episode: episode)
-                        .padding(4)
+                    DownloadLoadingIndicator(episode: episode)
                 }
             }
             .frame(width: 345, alignment: .leading)
@@ -775,4 +775,18 @@ struct MainView: View {
             )
         }
 
+}
+
+#Preview {
+    do {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: EpisodeModel.self, RecordListModel.self, configurations: config)
+
+        return MainView()
+            .modelContainer(container)
+            .environmentObject(RecordListViewModel())
+            .environmentObject(PlayQueueManager())
+    } catch {
+        return Text("Preview Error: \(error.localizedDescription)")
+    }
 }
