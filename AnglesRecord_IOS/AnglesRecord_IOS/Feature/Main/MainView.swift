@@ -1,4 +1,6 @@
+
 import AVFoundation
+import os
 import SwiftData
 import SwiftUI
 
@@ -6,6 +8,14 @@ private func TS() -> String {
     let f = DateFormatter()
     f.dateFormat = "HH:mm:ss.SSS"
     return f.string(from: Date())
+}
+
+// Scroll offset 관찰용 PreferenceKey
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
 }
 
 struct MainView: View {
@@ -28,22 +38,34 @@ struct MainView: View {
     
     @State private var showingReport = false
     
-    
     @State private var pendingTapToken: UUID? = nil
     // 미니플레이어에서 다운로드 상태 감지용(파일명)
     @State private var miniPlayerEpisodeFileName: String? = nil
-    
+
+    // Scroll tracking → 배경 전환용
+    @State private var scrollY: CGFloat = 0
+    @State private var useSolidBackground: Bool = false
+    private var gradientHeight: CGFloat {
+        UIScreen.main.bounds.height * 0.6
+    }
+
+    @State private var bgBlend: CGFloat = 0 // 0=gradient, 1=solid
+    private let bgSwitchPadding: CGFloat = 0 // 그라데이션 하단에서 약간의 여유
+    private let log = Logger(subsystem: "Acast", category: "Scroll")
     
     var body: some View {
-        
         ZStack(alignment: .bottom) {
-            
-            GeometryReader { geometry in
+            GeometryReader { _ in
                 VStack(spacing: 0) {
-                    GradientBackground()
-                        .frame(height: UIScreen.main.bounds.height * 0.5)
-                        .frame(maxWidth: .infinity)
-                        .ignoresSafeArea(.keyboard, edges: .top)
+                    ZStack {
+                        GradientBackground()
+                            .opacity(1 - bgBlend)
+                        (colorScheme == .dark ? Color.black : Color.white)
+                            .opacity(bgBlend)
+                    }
+                    .animation(.easeInOut(duration: 0.2), value: bgBlend)
+                    .frame(maxWidth: .infinity)
+                    .ignoresSafeArea(.keyboard, edges: .top)
                     Spacer()
                 }
             }
@@ -51,67 +73,66 @@ struct MainView: View {
             .allowsHitTesting(false)
             ScrollView {
                 VStack(spacing: 0) {
-                    VStack{
-                    HStack {
-                        Spacer() // 오른쪽 끝으로 밀기
-                        HStack(spacing: 16) {
-                            RefreshButton(isRefreshing: $isRefreshing) {
-                                if isRefreshing {
-                                    // ▶️ 정지: 원하는 모드 선택
-                                    recordListViewModel.requestBulkStop(.immediatePurge) // 또는 .finishCurrent
-                                    notifyDownloadFinished(message: "에피소드 다운로드가 취소되었습니다.")
-                                    return
+                    VStack {
+                        HStack {
+                            Spacer() // 오른쪽 끝으로 밀기
+                            HStack(spacing: 16) {
+                                RefreshButton(isRefreshing: $isRefreshing) {
+                                    if isRefreshing {
+                                        // ▶️ 정지: 원하는 모드 선택
+                                        recordListViewModel.requestBulkStop(.immediatePurge) // 또는 .finishCurrent
+                                        notifyDownloadFinished(message: "에피소드 다운로드가 취소되었습니다.")
+                                        return
+                                    }
+                                    // ▶️ 시작
+                                    notifyDownloadStart()
+                                    Task { await downloadFullEpisode() }
                                 }
-                                // ▶️ 시작
-                                notifyDownloadStart()
-                                Task { await downloadFullEpisode() }
-                            }
-                            .onChange(of: recordListViewModel.isBulkDownloading) { downloading in
-                                if !downloading { isRefreshing = false }
-                            }
+                                .onChange(of: recordListViewModel.isBulkDownloading) { downloading in
+                                    if !downloading { isRefreshing = false }
+                                }
                             
-                            Menu {
-                                // 1. 에이캐스트 설정 → 앱 자체 설정 화면
-                                Button("에이케스트 설정") {
-                                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                                Menu {
+                                    // 1. 에이캐스트 설정 → 앱 자체 설정 화면
+                                    Button("에이케스트 설정") {
+                                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                                            UIApplication.shared.open(url)
+                                        }
+                                    }
+                                
+                                    // 2. 알림 설정 → 앱 알림 화면 (실제로는 앱 설정 화면까지 이동 가능)
+                                    Button("알림 설정") {
+                                        let url = URL(string: UIApplication.openNotificationSettingsURLString)!
                                         UIApplication.shared.open(url)
                                     }
-                                }
                                 
-                                // 2. 알림 설정 → 앱 알림 화면 (실제로는 앱 설정 화면까지 이동 가능)
-                                Button("알림 설정") {
-                                    let url = URL(string: UIApplication.openNotificationSettingsURLString)!
-                                    UIApplication.shared.open(url)
-                                }
+                                    Divider()
                                 
-                                Divider()
-                                
-                                // 3. 문제 리포트 → 커스텀 액션 (아이콘 포함)
-                                Button {
-                                    showingReport = true
+                                    // 3. 문제 리포트 → 커스텀 액션 (아이콘 포함)
+                                    Button {
+                                        showingReport = true
+                                    } label: {
+                                        Label("문제 리포트", systemImage: "exclamationmark.bubble")
+                                    }
                                 } label: {
-                                    Label("문제 리포트", systemImage: "exclamationmark.bubble")
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.subText)
+                                            .frame(width: 28, height: 28)
+                                        Image(systemName: "ellipsis")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundColor(.white)
+                                    }
                                 }
-                            } label: {
-                                Image(systemName: "ellipsis.circle.fill")
-                                    .resizable()
-                                    .frame(width: 28, height: 28)
-                                    .foregroundColor(Color("subText"))
                             }
+                            .padding(.trailing, 20)
                         }
-                        .padding(.trailing, 20)
-                    }
-                    .padding(.top, 8)
-                    
+                        .padding(.top, 8)
                     
                         podcastMainSection
                         
                         descriptionSection
                     }
-                    .background(GradientBackground()
-                        .frame(maxWidth: .infinity)
-                        .frame(height: UIScreen.main.bounds.height * 1.5)
-                        .ignoresSafeArea(.keyboard, edges: .top))
                     
                     Divider().padding(.horizontal)
                     
@@ -122,6 +143,24 @@ struct MainView: View {
                     }
                 }
                 .padding(.bottom, selectedRecord != nil ? 100 : 20)
+                // 상단 고정 트래커로 오프셋을 실시간 관찰
+                .overlay(OffsetReader(), alignment: .top)
+            }
+            .overlay(alignment: .top) {
+                GeometryReader { proxy in
+                    let topInset = proxy.safeAreaInsets.top
+                    ZStack {
+                        Color.clear
+                            .opacity(1 - bgBlend)
+                        (colorScheme == .dark ? Color.black : Color.white)
+                            .opacity(bgBlend)
+                    }
+                    .frame(height: max(topInset, UIScreen.main.bounds.height * 0.05))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea(edges: .top)
+                    .animation(.easeInOut(duration: 0.2), value: bgBlend)
+                }
+                .allowsHitTesting(false)
             }
             .refreshable {
                 print("🔄 [\(TS())] pull-to-refresh 시작")
@@ -129,6 +168,26 @@ struct MainView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .zIndex(1)
+            .coordinateSpace(name: "mainScroll")
+            .onPreferenceChange(ScrollOffsetKey.self) { y in
+                scrollY = y
+                let switchY = (gradientHeight - bgSwitchPadding)
+                let next = y >= switchY
+                // instant switch to white at threshold, with a short fade for polish
+                if next != useSolidBackground {
+                    useSolidBackground = next
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        bgBlend = next ? 1 : 0
+                    }
+//                    print("🎚 BG -> \(next ? "solid(white/black)" : "gradient")  y=\(Int(y))  switchY=\(Int(switchY))")
+//                    log.info("BG switch y=\\(y), switchY=\\(switchY), next=\\(next)")
+                } else {
+                    // keep blend in sync in case of drift
+                    bgBlend = next ? 1 : 0
+                    // Uncomment for continuous logs:
+                    // print("📜 y=\\(Int(y))")
+                }
+            }
             
             if let record = selectedRecord {
                 MiniPlayerView(
@@ -185,8 +244,22 @@ struct MainView: View {
             }
         }
     }
+
+    // 스크롤 상단에 얇은 투명 트래커를 올려 offset을 Preference로 흘려보냄
+    private struct OffsetReader: View {
+        var body: some View {
+            GeometryReader { proxy in
+                let y = -proxy.frame(in: .named("mainScroll")).origin.y
+                Color.clear
+                    .frame(height: 0.5)
+                    .preference(key: ScrollOffsetKey.self, value: y)
+            }
+            .frame(height: 0.5)
+        }
+    }
     
     // MARK: - 전체 동기화 + 직렬 다운로드
+
     private func downloadFullEpisode() async {
         guard !isRefreshing else { return }
         isRefreshing = true
@@ -215,6 +288,7 @@ struct MainView: View {
     }
     
     // MARK: - 새로고침 (completion 기반으로 정확히 대기)
+
     private func refreshNow(trigger: String) async {
         print("🚀 [\(TS())] refreshNow 시작 by \(trigger)")
 
@@ -324,7 +398,6 @@ struct MainView: View {
         }
     }
     
-    
     private var descriptionSection: some View {
         Text("친구랑 수다 떠는 듯 편안하게, 때론 진지하게.\n에이캐스트가 매주 수요일, 새로운 에피소드로 찾아옵니다.")
             .font(Font.SFPro.Regular.s14)
@@ -333,7 +406,6 @@ struct MainView: View {
             .padding(.horizontal, 2)
             .padding(.bottom, 29)
     }
-    
     
     private var loadingSection: some View {
         VStack(spacing: 20) {
@@ -380,7 +452,8 @@ struct MainView: View {
 
                 // ⬇️ 진행/완료 상태일 때만 배지 노출 (벌크 중이면 해당 파일에 한해 자동 표시됨)
                 if recordListViewModel.isDownloading(fileName: episode.fileName)
-                    || recordListViewModel.isDownloaded(episode) {
+                    || recordListViewModel.isDownloaded(episode)
+                {
                     DownloadLoadingIndicator(episode: episode)
                         .allowsHitTesting(false) // 행 탭 방해 X
                 }
@@ -403,7 +476,7 @@ struct MainView: View {
         }
     }
 
-        // MARK: - 헬퍼
+    // MARK: - 헬퍼
 
     private func formatted(date: Date) -> String {
         let formatter = DateFormatter()
@@ -430,7 +503,7 @@ struct MainView: View {
         // 3) 이미 로컬에 있으면 바로 큐 재구성 후 재생
         if recordListViewModel.isDownloaded(episode) {
             rebuildQueueFromDownloaded(startEpisode: episode)
-            playEpisode(episode)          // ⚠️ 이 함수는 큐를 다시 만들지 않도록 수정된 버전이어야 함
+            playEpisode(episode) // ⚠️ 이 함수는 큐를 다시 만들지 않도록 수정된 버전이어야 함
             return
         }
 
@@ -445,7 +518,7 @@ struct MainView: View {
 
                 if ok {
                     self.rebuildQueueFromDownloaded(startEpisode: episode)
-                    self.playEpisode(episode)  // 큐를 덮어쓰지 않는 버전
+                    self.playEpisode(episode) // 큐를 덮어쓰지 않는 버전
                 } else {
                     // 실패 처리 (필요 시 로딩 해제/알럿 등)
                     // self.selectedRecord = nil
@@ -454,7 +527,6 @@ struct MainView: View {
             }
         }
     }
-
 
     // 파일명/타이틀에서 "에피소드 번호"를 추출 (ep.14, EP 14, e14, 14 등 유연하게)
     private func episodeNumber(of ep: EpisodeModel) -> Int? {
@@ -468,7 +540,8 @@ struct MainView: View {
             for p in patterns {
                 if let m = try? NSRegularExpression(pattern: p)
                     .firstMatch(in: s, range: NSRange(location: 0, length: s.utf16.count)),
-                   m.numberOfRanges >= 2 {
+                    m.numberOfRanges >= 2
+                {
                     // 마지막 캡쳐그룹을 우선
                     for idx in stride(from: m.numberOfRanges - 1, through: 1, by: -1) {
                         let r = m.range(at: idx)
@@ -516,14 +589,15 @@ struct MainView: View {
         // startEpisode가 records 안 어디에 있는지(파일명 매칭) 찾기
         let targetFile = startEpisode.fileName
         let startIndex = records.firstIndex { $0.fileURL?.lastPathComponent == targetFile } ?? 0
-        playQueue.setFromRecords(records, startAt: startIndex)  // UserDefaults 스냅샷까지 저장됨 :contentReference[oaicite:2]{index=2}
+        playQueue.setFromRecords(records, startAt: startIndex) // UserDefaults 스냅샷까지 저장됨 :contentReference[oaicite:2]{index=2}
     }
 
     private func needsDownload(_ localURL: URL, uploadedAt: Date) -> Bool {
         let fm = FileManager.default
         guard fm.fileExists(atPath: localURL.path) else { return true }
         if let attr = try? fm.attributesOfItem(atPath: localURL.path),
-           let modified = attr[.modificationDate] as? Date {
+           let modified = attr[.modificationDate] as? Date
+        {
             return modified < uploadedAt
         }
         return true
@@ -542,7 +616,6 @@ struct MainView: View {
     
     // 큐의 current를 실제로 재생하고, 리모컨 next/prev도 큐와 연동
     private func playFromQueue() {
-
         guard let toPlay = playQueue.current else { return }
         withAnimation(.spring()) {
             selectedRecord = toPlay
@@ -604,11 +677,9 @@ struct MainView: View {
     }
     
     private func playNextEpisode() {
-
         guard playQueue.hasNext else { return }
         playQueue.advance()
         playFromQueue()
-
     }
     
     private func deleteRecord(_ record: RecordListModel) {
@@ -645,25 +716,33 @@ struct MainView: View {
                         Circle()
                             .stroke(Color.subText, lineWidth: 2)
                             .frame(width: 28, height: 28)
-
+                        
+                        // Figma Arc: start 0°, span from -80% to 85%
+                        // -80% wraps to 0.20 of the circumference in SwiftUI's [0,1] trim space.
+                        let startFrac: CGFloat = 0.20 // -80% -> 0.20
+                        let endFrac: CGFloat = 0.85 // 85%  -> 0.85
+                        let currentEnd = startFrac + (endFrac - startFrac) * CGFloat(p)
                         Circle()
-                            .trim(from: 0, to: p)
+                            .trim(from: startFrac, to: currentEnd)
                             .stroke(
-                                Color(.white),
+                                Color.white,
                                 style: StrokeStyle(lineWidth: 2, lineCap: .round)
                             )
-                            .rotationEffect(.degrees(-90))
                             .frame(width: 28, height: 28)
                             .animation(.linear(duration: 0.2), value: p)
 
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.subText)
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(Color.buttonText)
                             .frame(width: 8, height: 8)
                     } else {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .resizable()
-                            .frame(width: 28, height: 28)
-                            .foregroundColor(Color("subText"))
+                        ZStack {
+                            Circle()
+                                .fill(Color.subText)
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
                     }
                 }
             }
@@ -672,10 +751,6 @@ struct MainView: View {
         }
     }
 
-
-
-
-    
     // MARK: - Report Sheet
     
     private struct ReportSheet: View {
@@ -737,7 +812,7 @@ struct MainView: View {
                         }
                         .disabled(
                             title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                            detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         )
                     }
                 }
@@ -806,7 +881,7 @@ struct MainView: View {
         // SwiftData에 자동 저장되지 않음(삽입 안 하면 메모리 객체)
         RecordListModel(
             title: ep.title,
-            artist: "",          // 필요 시 채워도 OK
+            artist: "", // 필요 시 채워도 OK
             duration: 0,
             fileURL: nil,
             uploadedAt: ep.uploadedAt
