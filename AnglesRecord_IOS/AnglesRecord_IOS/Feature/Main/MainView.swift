@@ -141,7 +141,7 @@ struct MainView: View {
                         episodeListContent
                     }
                 }
-                .padding(.bottom, selectedRecord != nil ? 100 : 20)
+                .padding(.bottom, selectedRecord != nil ? 50 : 20)
                 // 상단 고정 트래커로 오프셋을 실시간 관찰
                 .overlay(OffsetReader(), alignment: .top)
             }
