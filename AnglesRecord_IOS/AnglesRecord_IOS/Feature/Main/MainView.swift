@@ -127,14 +127,13 @@ struct MainView: View {
                             }
                             .padding(.trailing, 20)
                         }
-                        .padding(.top, 8)
+                        .padding(.top, 4)
                     
                         podcastMainSection
                         
                         descriptionSection
                     }
                     
-                    Divider().padding(.horizontal)
                     
                     if recordListViewModel.isLoadingEpisodes {
                         loadingSection
@@ -386,7 +385,7 @@ struct MainView: View {
                 .scaledToFit()
                 .frame(width: 200, height: 200)
                 .cornerRadius(8)
-                .padding(.top, 41)
+                .padding(.top, 20)
             
             Text("전지적 씨팝 시점: 전팝시")
                 .font(Font.SFPro.SemiBold.s16)
@@ -442,7 +441,7 @@ struct MainView: View {
                 VStack(spacing: 0) {
                     episodeRow(for: episode)
                         .padding(.horizontal, 20)
-                        .padding(.vertical, 16)
+                        .padding(.top, index == 0 ? 32 : 16)
                     
                     if index < recordListViewModel.episodes.count - 1 {
                         Divider().padding(.horizontal, 20)
@@ -455,7 +454,7 @@ struct MainView: View {
     }
     
     private func episodeRow(for episode: EpisodeModel) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(formatted(date: episode.uploadedAt))
                 .font(Font.SFPro.SemiBold.s12)
                 .foregroundColor(Color("subText"))
@@ -476,11 +475,13 @@ struct MainView: View {
                 }
             }
             .frame(width: 345, alignment: .leading)
+            .padding(.bottom, 8)
 
             Text(episode.desc)
                 .font(Font.SFPro.Regular.s14)
                 .foregroundColor(Color("subText"))
                 .lineLimit(2)
+                .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
