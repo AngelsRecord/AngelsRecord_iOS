@@ -236,11 +236,28 @@ struct MainView: View {
                 print("📥 [\(TS())] 푸시 감지됨 → 자동 동기화")
                 Task { await refreshNow(trigger: "onAppear-flag") }
             }
+            
+            if let current = playQueue.current {
+                selectedRecord = current
+                miniPlayerEpisodeFileName = current.fileURL?.lastPathComponent
+            }
         }
         .onChange(of: shouldFetchNewEpisodes) { newVal in
             print("🔁 [\(TS())] shouldFetchNewEpisodes 변경: \(newVal)")
             if newVal {
                 Task { await refreshNow(trigger: "flag-onchange") }
+            }
+        }
+        .onReceive(playQueue.$currentIndex) { _ in
+            guard let current = playQueue.current else {
+                // 큐가 비면 미니플레이어 닫기
+                selectedRecord = nil
+                return
+            }
+            withAnimation(.spring()) {
+                selectedRecord = current
+                // 미니플레이어의 "다운로드 중" 표시 정확도를 위해 파일명도 같이 업데이트
+                miniPlayerEpisodeFileName = current.fileURL?.lastPathComponent
             }
         }
     }
