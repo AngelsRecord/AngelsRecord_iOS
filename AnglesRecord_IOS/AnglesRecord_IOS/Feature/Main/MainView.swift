@@ -41,14 +41,14 @@ struct MainView: View {
     @State private var pendingTapToken: UUID? = nil
     // 미니플레이어에서 다운로드 상태 감지용(파일명)
     @State private var miniPlayerEpisodeFileName: String? = nil
-
+    
     // Scroll tracking → 배경 전환용
     @State private var scrollY: CGFloat = 0
     @State private var useSolidBackground: Bool = false
     private var gradientHeight: CGFloat {
         UIScreen.main.bounds.height * 0.6
     }
-
+    
     @State private var bgBlend: CGFloat = 0 // 0=gradient, 1=solid
     private let bgSwitchPadding: CGFloat = 0 // 그라데이션 하단에서 약간의 여유
     private let log = Logger(subsystem: "Acast", category: "Scroll")
@@ -91,7 +91,7 @@ struct MainView: View {
                                 .onChange(of: recordListViewModel.isBulkDownloading) { downloading in
                                     if !downloading { isRefreshing = false }
                                 }
-                            
+                                
                                 Menu {
                                     // 1. 에이캐스트 설정 → 앱 자체 설정 화면
                                     Button("에이케스트 설정") {
@@ -99,15 +99,15 @@ struct MainView: View {
                                             UIApplication.shared.open(url)
                                         }
                                     }
-                                
+                                    
                                     // 2. 알림 설정 → 앱 알림 화면 (실제로는 앱 설정 화면까지 이동 가능)
                                     Button("알림 설정") {
                                         let url = URL(string: UIApplication.openNotificationSettingsURLString)!
                                         UIApplication.shared.open(url)
                                     }
-                                
+                                    
                                     Divider()
-                                
+                                    
                                     // 3. 문제 리포트 → 커스텀 액션 (아이콘 포함)
                                     Button {
                                         showingReport = true
@@ -128,7 +128,7 @@ struct MainView: View {
                             .padding(.trailing, 20)
                         }
                         .padding(.top, 4)
-                    
+                        
                         podcastMainSection
                         
                         descriptionSection
@@ -178,8 +178,8 @@ struct MainView: View {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         bgBlend = next ? 1 : 0
                     }
-//                    print("🎚 BG -> \(next ? "solid(white/black)" : "gradient")  y=\(Int(y))  switchY=\(Int(switchY))")
-//                    log.info("BG switch y=\\(y), switchY=\\(switchY), next=\\(next)")
+                    //                    print("🎚 BG -> \(next ? "solid(white/black)" : "gradient")  y=\(Int(y))  switchY=\(Int(switchY))")
+                    //                    log.info("BG switch y=\\(y), switchY=\\(switchY), next=\\(next)")
                 } else {
                     // keep blend in sync in case of drift
                     bgBlend = next ? 1 : 0
@@ -222,45 +222,43 @@ struct MainView: View {
             allowedContentTypes: [.audio],
             allowsMultipleSelection: false
         ) { handleFileImport($0) }
-        .onAppear {
-            print("👀 [\(TS())] MainView.onAppear")
-            // 1) 로컬 먼저
-            recordListViewModel.loadLocalEpisodes(context: modelContext)
-            
-            // 2) (필요 시) 1회 백필
-            backfillUploadedAtOnceIfNeeded()
-            
-            // 3) 푸시 플래그 감지 시 자동 동기화
-            if shouldFetchNewEpisodes {
-                print("📥 [\(TS())] 푸시 감지됨 → 자동 동기화")
-                Task { await refreshNow(trigger: "onAppear-flag") }
+            .onAppear {
+                print("👀 [\(TS())] MainView.onAppear")
+                // 1) 로컬 먼저
+                recordListViewModel.loadLocalEpisodes(context: modelContext)
+                
+                // 2) (필요 시) 1회 백필
+                backfillUploadedAtOnceIfNeeded()
+                
+                // 3) 푸시 플래그 감지 시 자동 동기화
+                if shouldFetchNewEpisodes {
+                    print("📥 [\(TS())] 푸시 감지됨 → 자동 동기화")
+                    Task { await refreshNow(trigger: "onAppear-flag") }
+                }
+                
+                // 4) 재생 상태 복원
+                restorePlaybackStateIfNeeded()
             }
-            
-            if let current = playQueue.current {
-                selectedRecord = current
-                miniPlayerEpisodeFileName = current.fileURL?.lastPathComponent
+            .onChange(of: shouldFetchNewEpisodes) { newVal in
+                print("🔁 [\(TS())] shouldFetchNewEpisodes 변경: \(newVal)")
+                if newVal {
+                    Task { await refreshNow(trigger: "flag-onchange") }
+                }
             }
-        }
-        .onChange(of: shouldFetchNewEpisodes) { newVal in
-            print("🔁 [\(TS())] shouldFetchNewEpisodes 변경: \(newVal)")
-            if newVal {
-                Task { await refreshNow(trigger: "flag-onchange") }
+            .onReceive(playQueue.$currentIndex) { _ in
+                guard let current = playQueue.current else {
+                    // 큐가 비면 미니플레이어 닫기
+                    selectedRecord = nil
+                    return
+                }
+                withAnimation(.spring()) {
+                    selectedRecord = current
+                    // 미니플레이어의 "다운로드 중" 표시 정확도를 위해 파일명도 같이 업데이트
+                    miniPlayerEpisodeFileName = current.fileURL?.lastPathComponent
+                }
             }
-        }
-        .onReceive(playQueue.$currentIndex) { _ in
-            guard let current = playQueue.current else {
-                // 큐가 비면 미니플레이어 닫기
-                selectedRecord = nil
-                return
-            }
-            withAnimation(.spring()) {
-                selectedRecord = current
-                // 미니플레이어의 "다운로드 중" 표시 정확도를 위해 파일명도 같이 업데이트
-                miniPlayerEpisodeFileName = current.fileURL?.lastPathComponent
-            }
-        }
     }
-
+    
     // 스크롤 상단에 얇은 투명 트래커를 올려 offset을 Preference로 흘려보냄
     private struct OffsetReader: View {
         var body: some View {
@@ -275,39 +273,39 @@ struct MainView: View {
     }
     
     // MARK: - 전체 동기화 + 직렬 다운로드
-
+    
     private func downloadFullEpisode() async {
         guard !isRefreshing else { return }
         isRefreshing = true
-
+        
         // 시작 알림
         (UIApplication.shared.delegate as? AppDelegate)?
             .scheduleLocalNotification(title: "A'Cast",
                                        body: "에피소드가 백그라운드에서 다운로드 중입니다.",
                                        delay: 0.5,
                                        category: "download")
-
+        
         await withCheckedContinuation { cont in
             recordListViewModel.fetchAndSyncEpisodes(context: modelContext) { _ in
                 cont.resume()
             }
         }
-
+        
         // 완료 알림
         (UIApplication.shared.delegate as? AppDelegate)?
             .scheduleLocalNotification(title: "A'Cast",
                                        body: "에피소드 다운로드가 끝났습니다.",
                                        delay: 0.5,
                                        category: "download")
-
+        
         isRefreshing = false
     }
     
     // MARK: - 새로고침 (completion 기반으로 정확히 대기)
-
+    
     private func refreshNow(trigger: String) async {
         print("🚀 [\(TS())] refreshNow 시작 by \(trigger)")
-
+        
         await withCheckedContinuation { cont in
             recordListViewModel.syncEpisodesMetadataOnly(context: modelContext) { ok in
                 print("🧩 [\(TS())] syncEpisodesMetadataOnly 완료 ok=\(ok)")
@@ -316,12 +314,12 @@ struct MainView: View {
                 }
             }
         }
-
+        
         if shouldFetchNewEpisodes {
             print("✅ [\(TS())] 자동 새로고침 1회 완료 → 플래그 OFF")
             shouldFetchNewEpisodes = false
         }
-
+        
         print("🏁 [\(TS())] refreshNow 종료")
     }
     
@@ -465,7 +463,7 @@ struct MainView: View {
                     .foregroundColor(Color("mainText"))
                     .lineLimit(2)
                     .padding(.trailing, 6)
-
+                
                 // ⬇️ 진행/완료 상태일 때만 배지 노출 (벌크 중이면 해당 파일에 한해 자동 표시됨)
                 if recordListViewModel.isDownloading(fileName: episode.fileName)
                     || recordListViewModel.isDownloaded(episode)
@@ -476,7 +474,7 @@ struct MainView: View {
             }
             .frame(width: 345, alignment: .leading)
             .padding(.bottom, 8)
-
+            
             Text(episode.desc)
                 .font(Font.SFPro.Regular.s14)
                 .foregroundColor(Color("subText"))
@@ -493,16 +491,16 @@ struct MainView: View {
             ensureLocalThenPlay(episode)
         }
     }
-
+    
     // MARK: - 헬퍼
-
+    
     private func formatted(date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "M월 d일"
         formatter.locale = Locale(identifier: "ko_KR")
         return formatter.string(from: date)
     }
-
+    
     private func playLatestEpisode() {
         guard let latestEpisode = recordListViewModel.episodes.first else { return }
         ensureLocalThenPlay(latestEpisode)
@@ -513,18 +511,18 @@ struct MainView: View {
         // 1) 마지막 탭 토큰 (연달아 탭해도 마지막 것만 유효)
         let token = UUID()
         pendingTapToken = token
-
+        
         // 2) 미니플레이어를 즉시 로딩 상태로 띄우기
         selectedRecord = makeTempRecord(from: episode)
         miniPlayerEpisodeFileName = episode.fileName
-
+        
         // 3) 이미 로컬에 있으면 바로 큐 재구성 후 재생
         if recordListViewModel.isDownloaded(episode) {
             rebuildQueueFromDownloaded(startEpisode: episode)
             playEpisode(episode) // ⚠️ 이 함수는 큐를 다시 만들지 않도록 수정된 버전이어야 함
             return
         }
-
+        
         // 4) 없으면 다운로드 → 완료 시 마지막 탭인지 확인 → 큐 재구성 → 재생
         recordListViewModel.downloadIfNeeded(
             fileName: episode.fileName,
@@ -533,7 +531,7 @@ struct MainView: View {
             DispatchQueue.main.async {
                 // 이전 탭의 콜백이면 무시
                 guard self.pendingTapToken == token else { return }
-
+                
                 if ok {
                     self.rebuildQueueFromDownloaded(startEpisode: episode)
                     self.playEpisode(episode) // 큐를 덮어쓰지 않는 버전
@@ -545,7 +543,7 @@ struct MainView: View {
             }
         }
     }
-
+    
     // 파일명/타이틀에서 "에피소드 번호"를 추출 (ep.14, EP 14, e14, 14 등 유연하게)
     private func episodeNumber(of ep: EpisodeModel) -> Int? {
         let candidates = [ep.fileName.lowercased(), ep.title.lowercased()]
@@ -558,7 +556,7 @@ struct MainView: View {
             for p in patterns {
                 if let m = try? NSRegularExpression(pattern: p)
                     .firstMatch(in: s, range: NSRange(location: 0, length: s.utf16.count)),
-                    m.numberOfRanges >= 2
+                   m.numberOfRanges >= 2
                 {
                     // 마지막 캡쳐그룹을 우선
                     for idx in stride(from: m.numberOfRanges - 1, through: 1, by: -1) {
@@ -572,11 +570,11 @@ struct MainView: View {
         }
         return nil
     }
-
+    
     // "다운로드된 것들만" 모아 에피소드 넘버 오름차순 → RecordListModel 배열로 변환
     private func buildDownloadedRecordsSorted() -> [RecordListModel] {
         let downloaded = recordListViewModel.episodes.filter { recordListViewModel.isDownloaded($0) }
-
+        
         // 정렬: 1) 에피소드 번호(오름차순) 2) 번호가 없으면 업로드 날짜(오름차순)
         let sorted = downloaded.sorted { a, b in
             let na = episodeNumber(of: a)
@@ -586,7 +584,7 @@ struct MainView: View {
             if nb != nil { return false }
             return a.uploadedAt < b.uploadedAt
         }
-
+        
         // 레코드로 변환
         return sorted.map { e in
             let url = recordListViewModel.getLocalFileURL(for: e.fileName)
@@ -600,7 +598,7 @@ struct MainView: View {
             )
         }
     }
-
+    
     // 큐 재구성: 다운로드된 것들만, 넘버링대로. 시작 포지션은 startEpisode에 맞춤
     private func rebuildQueueFromDownloaded(startEpisode: EpisodeModel) {
         let records = buildDownloadedRecordsSorted()
@@ -609,7 +607,7 @@ struct MainView: View {
         let startIndex = records.firstIndex { $0.fileURL?.lastPathComponent == targetFile } ?? 0
         playQueue.setFromRecords(records, startAt: startIndex) // UserDefaults 스냅샷까지 저장됨 :contentReference[oaicite:2]{index=2}
     }
-
+    
     private func needsDownload(_ localURL: URL, uploadedAt: Date) -> Bool {
         let fm = FileManager.default
         guard fm.fileExists(atPath: localURL.path) else { return true }
@@ -620,7 +618,7 @@ struct MainView: View {
         }
         return true
     }
-
+    
     private func playEpisode(_ episode: EpisodeModel) {
         // 큐는 이미 '다운로드된 것만'으로 구성되어 있다는 가정.
         // 해당 에피소드를 큐에서 찾아 startAt으로 맞추고 재생.
@@ -639,7 +637,10 @@ struct MainView: View {
             selectedRecord = toPlay
             audioPlayer.play(toPlay)
         }
-
+        audioPlayer.onPlaybackStateChanged = { isPlaying, currentTime in
+            playQueue.savePlaybackState(isPlaying: isPlaying, currentTime: currentTime)
+        }
+        
         audioPlayer.onNextTrack = {
             guard playQueue.hasNext else { audioPlayer.stop(); return }
             playQueue.advance()
@@ -673,7 +674,7 @@ struct MainView: View {
                 
                 let asset = AVURLAsset(url: destinationURL)
                 let duration = CMTimeGetSeconds(asset.duration)
-
+                
                 let newRecord = RecordListModel(
                     title: url.deletingPathExtension().lastPathComponent,
                     artist: "Unknown Artist",
@@ -714,14 +715,14 @@ struct MainView: View {
         modelContext.delete(record)
         try? modelContext.save()
     }
-
+    
     // MARK: - UI Components
     
     private struct RefreshButton: View {
         @EnvironmentObject var recordListViewModel: RecordListViewModel
         @Binding var isRefreshing: Bool
         var action: () -> Void
-
+        
         var body: some View {
             Button {
                 // ❌ guard !isRefreshing else { return }  -> 제거!
@@ -730,7 +731,7 @@ struct MainView: View {
                 ZStack {
                     if isRefreshing {
                         let p = max(0, min(1, recordListViewModel.bulkStepProgress))
-
+                        
                         Circle()
                             .stroke(Color.subText, lineWidth: 2)
                             .frame(width: 28, height: 28)
@@ -748,7 +749,7 @@ struct MainView: View {
                             )
                             .frame(width: 28, height: 28)
                             .animation(.linear(duration: 0.2), value: p)
-
+                        
                         RoundedRectangle(cornerRadius: 1)
                             .fill(Color.buttonText)
                             .frame(width: 8, height: 8)
@@ -768,7 +769,7 @@ struct MainView: View {
             .accessibilityLabel(isRefreshing ? "다운로드 중" : "새로고침")
         }
     }
-
+    
     // MARK: - Report Sheet
     
     private struct ReportSheet: View {
@@ -830,7 +831,7 @@ struct MainView: View {
                         }
                         .disabled(
                             title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                                detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         )
                     }
                 }
@@ -893,7 +894,7 @@ struct MainView: View {
             return components.url
         }
     }
-        
+    
     // 탭 즉시 미니플레이어를 띄우기 위한 임시(비영구) 레코드
     private func makeTempRecord(from ep: EpisodeModel) -> RecordListModel {
         // SwiftData에 자동 저장되지 않음(삽입 안 하면 메모리 객체)
@@ -905,7 +906,7 @@ struct MainView: View {
             uploadedAt: ep.uploadedAt
         )
     }
-
+    
     private func notifyDownloadStart() {
         (UIApplication.shared.delegate as? AppDelegate)?
             .scheduleLocalNotification(
@@ -915,7 +916,7 @@ struct MainView: View {
                 category: "download"
             )
     }
-
+    
     private func notifyDownloadFinished(message: String = "에피소드 다운로드가 끝났습니다.") {
         (UIApplication.shared.delegate as? AppDelegate)?
             .scheduleLocalNotification(
@@ -925,13 +926,71 @@ struct MainView: View {
                 category: "download"
             )
     }
+    
+    // MARK: - 재생 상태 복원
+    private func restorePlaybackStateIfNeeded() {
+        
+        guard let current = playQueue.current else { return }
+        guard let playbackState = playQueue.getLastPlaybackState() else {
+            
+            selectedRecord = current
+            miniPlayerEpisodeFileName = current.fileURL?.lastPathComponent
+            return
+        }
+        
+        let hoursSinceLastPlay = Date().timeIntervalSince(playbackState.lastPlayedAt) / 3600
+        if hoursSinceLastPlay > 24 {
+            print("🕐 [\(TS())] 마지막 재생으로부터 \(Int(hoursSinceLastPlay))시간 경과 → 자동 복원 스킵")
+            selectedRecord = current
+            miniPlayerEpisodeFileName = current.fileURL?.lastPathComponent
+            return
+        }
+        
+        print("🔄 [\(TS())] 재생 상태 복원 중... isPlaying=\(playbackState.isPlaying), currentTime=\(playbackState.currentTime)")
+        
+        
+        selectedRecord = current
+        miniPlayerEpisodeFileName = current.fileURL?.lastPathComponent
+        audioPlayer.play(current)
+        
+        if playbackState.currentTime > 0 {
+            audioPlayer.seek(to: playbackState.currentTime)
+        }
+    
+        audioPlayer.pause(releaseToOthers: false)
+        audioPlayer.onPlaybackStateChanged = { isPlaying, currentTime in
+            playQueue.savePlaybackState(isPlaying: isPlaying, currentTime: currentTime)
+        }
+        
+        audioPlayer.onNextTrack = {
+            guard playQueue.hasNext else {
+                audioPlayer.stop()
+                return
+            }
+            playQueue.advance()
+            if let next = playQueue.current {
+                audioPlayer.play(next)
+                selectedRecord = next
+            }
+        }
+        audioPlayer.onPrevTrack = {
+            guard playQueue.hasPrev else { return }
+            playQueue.back()
+            if let prev = playQueue.current {
+                audioPlayer.play(prev)
+                selectedRecord = prev
+            }
+        }
+        
+        print("✅ [\(TS())] 재생 상태 복원 완료")
+    }
 }
 
 #Preview {
     do {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: EpisodeModel.self, RecordListModel.self, configurations: config)
-
+        
         return MainView()
             .modelContainer(container)
             .environmentObject(RecordListViewModel())

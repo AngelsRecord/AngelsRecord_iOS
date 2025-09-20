@@ -131,11 +131,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                 }
             }
 
-            // 권한/등록 플로우 재확인
+        
+            self.ensureAudioSessionIfNeeded()
             self.checkAndSetupPushFlow()
         }
 
-        // ✅ 최초 진입 시 권한/등록 플로우
         checkAndSetupPushFlow()
 
         return true
@@ -443,6 +443,26 @@ extension AppDelegate: MessagingDelegate {
 private extension UIWindowScene {
     var keyWindow: UIWindow? {
         return self.windows.first(where: { $0.isKeyWindow })
+    }
+}
+
+// MARK: - Audio Session Helpers
+extension AppDelegate {
+    func ensureAudioSessionIfNeeded() {
+        let session = AVAudioSession.sharedInstance()
+        
+        do {
+            // 오디오 세션 상태 확인
+            if !session.isOtherAudioPlaying {
+                try session.setCategory(.playback, mode: .default, options: [])
+                try session.setActive(true, options: [])
+                print("🎵 오디오 세션 복원 완료")
+            } else {
+                print("🎵 다른 앱이 오디오 사용 중 → 세션 복원 스킵")
+            }
+        } catch {
+            print("❌ 오디오 세션 복원 실패: \(error.localizedDescription)")
+        }
     }
 }
 

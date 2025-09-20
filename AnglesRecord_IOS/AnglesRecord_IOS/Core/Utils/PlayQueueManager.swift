@@ -96,6 +96,40 @@ final class PlayQueueManager: ObservableObject {
         currentIndex = nil
         saveSnapshot()
     }
+    
+    // MARK: - 재생 상태 관리
+
+    func savePlaybackState(isPlaying: Bool, currentTime: Double) {
+        let dto = items.map { r in
+            SnapshotItem(
+                title: r.title,
+                artist: r.artist,
+                duration: r.duration,
+                fileName: r.fileURL?.lastPathComponent,
+                fileURL: r.fileURL?.absoluteString,
+                uploadedAt: r.uploadedAt
+            )
+        }
+        let playbackState = PlaybackState(
+            isPlaying: isPlaying,
+            currentTime: currentTime,
+            lastPlayedAt: Date()
+        )
+        let snap = Snapshot(items: dto, currentIndex: currentIndex, playbackState: playbackState)
+        if let data = try? JSONEncoder().encode(snap) {
+            UserDefaults.standard.set(data, forKey: snapshotKey)
+        }
+    }
+
+    func getLastPlaybackState() -> (isPlaying: Bool, currentTime: Double, lastPlayedAt: Date)? {
+        guard
+            let data = UserDefaults.standard.data(forKey: snapshotKey),
+            let snap = try? JSONDecoder().decode(Snapshot.self, from: data),
+            let state = snap.playbackState
+        else { return nil }
+        
+        return (state.isPlaying, state.currentTime, state.lastPlayedAt)
+    }
 
     // MARK: - 영속화(UserDefaults 스냅샷)
     private struct SnapshotItem: Codable {
@@ -106,9 +140,15 @@ final class PlayQueueManager: ObservableObject {
         let fileURL: String?     // 절대경로(백업용)
         let uploadedAt: Date?
     }
+    private struct PlaybackState: Codable {
+        let isPlaying: Bool
+        let currentTime: Double
+        let lastPlayedAt: Date
+    }
     private struct Snapshot: Codable {
         let items: [SnapshotItem]
         let currentIndex: Int?
+        let playbackState: PlaybackState?
     }
 
     private func saveSnapshot() {
@@ -122,7 +162,7 @@ final class PlayQueueManager: ObservableObject {
                 uploadedAt: r.uploadedAt
             )
         }
-        let snap = Snapshot(items: dto, currentIndex: currentIndex)
+        let snap = Snapshot(items: dto, currentIndex: currentIndex, playbackState: nil)
         if let data = try? JSONEncoder().encode(snap) {
             UserDefaults.standard.set(data, forKey: snapshotKey)
         }
