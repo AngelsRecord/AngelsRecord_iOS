@@ -37,14 +37,21 @@ struct AuthView: View {
     var body: some View {
         VStack {
             Text("인증 코드를\n입력해주세요.")
-                .font(.system(size: 25, weight: .bold))
+                .font(.system(size: 24, weight: .bold))
                 .bold()
-                .padding(.trailing, 218)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 24)
                 .padding(.top, 74)
 
             VStack {
                 SecureLimitedTextField(text: $code, isDisabled: .constant(loadingPhase != .none))
-                    .frame(height: 64)
+                    .frame(height: {
+                        let screenWidth = UIScreen.main.bounds.width
+                        let baselineWidth: CGFloat = 393 // iPhone 15 Pro logical width
+                        let scale = max(0.85, min(1.2, screenWidth / baselineWidth))
+                        return 64 * scale
+                    }())
                     .padding(.top, 45)
                     .onChange(of: code) { _ in errorMessage = nil }
 
@@ -64,26 +71,35 @@ struct AuthView: View {
                     ToastMessage()
                 }
             }
+            .padding(.horizontal, 24)
 
             Button(action: { verifyCode(code) }) {
+                // iPhone 15 Pro logical width baseline: 393pt
+                // Original button size: 353 x 64
+                let screenWidth = UIScreen.main.bounds.width
+                let baselineWidth: CGFloat = 393
+                let scale = max(0.85, min(1.2, screenWidth / baselineWidth)) // clamp to avoid extremes
+                let buttonWidth = 353 * scale
+                let buttonHeight = 64 * scale
+
                 if loadingPhase != .none {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 8 * scale) {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         Text(loadingPhase == .authenticating ? "인증중..." : "에피소드 다운로드 중...")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 16 * scale, weight: .bold))
                             .foregroundColor(.buttonText)
                     }
-                    .frame(width: 353, height: 64)
+                    .frame(width: buttonWidth, height: buttonHeight)
                     .background(Color("buttonColor"))
-                    .cornerRadius(8)
+                    .cornerRadius(8 * scale)
                 } else {
                     Text("시작하기")
-                        .font(.system(size: 16, weight: .bold))
-                        .frame(width: 353, height: 64)
+                        .font(.system(size: 16 * scale, weight: .bold))
+                        .frame(width: buttonWidth, height: buttonHeight)
                         .foregroundColor(.buttonText)
                         .background(code.isEmpty ? Color("buttonColor") : Color("mainBlue"))
-                        .cornerRadius(8)
+                        .cornerRadius(8 * scale)
                 }
             }
             .padding(.bottom, 3)
@@ -286,3 +302,4 @@ extension View {
                                         to: nil, from: nil, for: nil)
     }
 }
+

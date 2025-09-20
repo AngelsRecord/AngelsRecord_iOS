@@ -60,7 +60,6 @@ struct SecureLimitedTextField: View {
                 .foregroundColor(isDisabled ? Color("subText") : (isActive ? Color("mainBlue") : Color("subText")))  // 비활성화 시 subText로 변경
                 .animation(.easeInOut(duration: 0.2), value: isActive)
         }
-        .padding(.horizontal, 24)
     }
 }
 
