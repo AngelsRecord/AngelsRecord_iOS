@@ -34,7 +34,7 @@ struct PlayerView: View {
     @State private var editMode: EditMode = .active
 
     @Namespace var animation
-    private var volumeObserver = SystemVolumeObserver()
+    @State private var volumeObserver = SystemVolumeObserver()
 
     // MARK: - Init
     public init(record: RecordListModel,
@@ -405,6 +405,8 @@ struct PlayerView: View {
             }
         }
         .onAppear {
+            if audioPlayer.uiState != .playing { volumeObserver.start() }
+            
             trackKey = makeTrackKey(from: record)
 
             // 시스템 볼륨 동기화
@@ -439,6 +441,19 @@ struct PlayerView: View {
                 }
             }
         }
+        .onDisappear {
+            volumeObserver.stop()
+        }
+        // 재생 상태 변화에 따라 토글
+        .onChange(of: audioPlayer.uiState) { st in
+            if st == .playing { volumeObserver.stop() } else { volumeObserver.start() }
+        }
+        // 포그라운드 복귀 시 재부팅 (일부 기기에서 KVO가 드랍되는 대비)
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            if audioPlayer.uiState != .playing {
+                volumeObserver.stop(); volumeObserver.start()
+            }
+        }
     }
 
     // MARK: - Helpers
@@ -469,24 +484,37 @@ struct PlayerView: View {
     }
 }
 
-class SystemVolumeObserver {
+final class SystemVolumeObserver {
+    private let session = AVAudioSession.sharedInstance()
     private var observation: NSKeyValueObservation?
-    private let audioSession = AVAudioSession.sharedInstance()
+    private var isEnabled = false
 
     var onVolumeChange: ((Float) -> Void)?
 
-    init() {
-        try? audioSession.setActive(true)
-        observation = audioSession.observe(\AVAudioSession.outputVolume, options: [.new]) { [weak self] _, change in
-            if let newVolume = change.newValue {
-                self?.onVolumeChange?(newVolume)
-            }
+    func start() {
+        guard !isEnabled else { return }
+        isEnabled = true
+        // 🔊 관찰 전용: 외부 오디오를 끊지 않는 ambient + mix
+        try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+        try? session.setActive(true) // 외부 재생 유지됨
+        attachKVO()
+    }
+
+    func stop() {
+        guard isEnabled else { return }
+        isEnabled = false
+        observation?.invalidate(); observation = nil
+        // 관찰만 끄는 용도 — 실제 재생 중이 아니면 세션 반납
+        try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+    }
+
+    private func attachKVO() {
+        observation = session.observe(\.outputVolume, options: [.new]) { [weak self] _, chg in
+            if let v = chg.newValue { self?.onVolumeChange?(v) }
         }
     }
 
-    deinit {
-        observation?.invalidate()
-    }
+    deinit { stop() }
 }
 
 struct HiddenSystemVolumeView: UIViewRepresentable {
