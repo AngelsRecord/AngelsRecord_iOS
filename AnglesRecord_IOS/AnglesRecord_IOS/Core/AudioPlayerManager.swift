@@ -2,7 +2,9 @@ import AVFoundation
 import Combine
 import Foundation
 import MediaPlayer
-import UIKit // ✅ 앨범 아트 UIImage 사용
+import UIKit
+
+enum PlaybackUIState: Equatable { case idle, loading, playing, paused }
 
 final class AudioPlayerManager: NSObject,ObservableObject {
     // MARK: - Private
@@ -20,6 +22,9 @@ final class AudioPlayerManager: NSObject,ObservableObject {
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 1 // 0 division 방지용 기본값
     @Published var volume: Float = 1.0
+    
+    @Published private(set) var uiState: PlaybackUIState = .idle
+    private var timeControlCancellable: AnyCancellable?
 
     // MARK: - State
     var currentRecord: RecordListModel?
@@ -28,6 +33,38 @@ final class AudioPlayerManager: NSObject,ObservableObject {
     var onPrevTrack: (() -> Void)?
     var onPlaybackStateChanged: ((Bool, TimeInterval) -> Void)?
 
+
+    override init() {
+        super.init()
+        // ✅ 다른 앱이 재생 시작하면(.began) 우리 쪽으로 인터럽션 통지 받기
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleInterruption(_:)),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
+        removeTimeObserverIfNeeded()
+    }
+    
+    private func observeTimeControlStatus(of player: AVPlayer) {
+        timeControlCancellable = player.publisher(for: \.timeControlStatus)
+            .map { status -> PlaybackUIState in
+                switch status {
+                case .playing: return .playing
+                case .paused: return .paused
+                case .waitingToPlayAtSpecifiedRate: return .loading
+                @unknown default: return .paused
+                }
+            }
+            .removeDuplicates()
+            .debounce(for: .milliseconds(120), scheduler: RunLoop.main) // ✨ 깜빡임 방지
+            .receive(on: RunLoop.main)
+            .sink { [weak self] st in self?.uiState = st }
+    }
 
     // MARK: - Public API
 
@@ -133,7 +170,6 @@ final class AudioPlayerManager: NSObject,ObservableObject {
                 cc.previousTrackCommand.removeTarget(nil)
             }
         }
-
     
     private func observeTimeControlStatus(of player: AVPlayer) {
         // 기존 구독 해제
@@ -149,7 +185,7 @@ final class AudioPlayerManager: NSObject,ObservableObject {
                 self.onPlaybackStateChanged?(self.isPlaying, self.currentTime)
             }
     }
-
+  
     /// 일시정지/재생 토글
     func togglePlayPause() {
         guard let player = player else { return }
@@ -387,9 +423,5 @@ final class AudioPlayerManager: NSObject,ObservableObject {
         guard time.isNumeric, time.isValid else { return 0 }
         let s = CMTimeGetSeconds(time)
         return s.isFinite && !s.isNaN ? s : 0
-    }
-
-    deinit {
-        removeTimeObserverIfNeeded()
     }
 }
