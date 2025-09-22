@@ -31,6 +31,7 @@ final class AudioPlayerManager: NSObject,ObservableObject {
     
     var onNextTrack: (() -> Void)?
     var onPrevTrack: (() -> Void)?
+    var onPlaybackStateChanged: ((Bool, TimeInterval) -> Void)?
 
 
     override init() {
@@ -118,7 +119,8 @@ final class AudioPlayerManager: NSObject,ObservableObject {
     func pause(releaseToOthers: Bool = true) {
         player?.pause()
         isPlaying = false
-        if releaseToOthers { surrenderAudioToOthers() } // 🔑 포인트
+        if releaseToOthers { surrenderAudioToOthers() }
+        onPlaybackStateChanged?(isPlaying, currentTime)
     }
 
     // ✅ 다른 앱이 재생 시작(인터럽션 .began)했을 때: 즉시 반납
@@ -168,7 +170,22 @@ final class AudioPlayerManager: NSObject,ObservableObject {
                 cc.previousTrackCommand.removeTarget(nil)
             }
         }
+    
+    private func observeTimeControlStatus(of player: AVPlayer) {
+        // 기존 구독 해제
+        statusObservation?.cancel()
 
+        statusObservation = player.publisher(for: \.timeControlStatus, options: [.initial, .new])
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                guard let self else { return }
+                // 시스템이 멈췄어도 버튼이 맞게 보이도록 동기화
+                self.isPlaying = (status == .playing)
+                self.updateNowPlayingTime()
+                self.onPlaybackStateChanged?(self.isPlaying, self.currentTime)
+            }
+    }
+  
     /// 일시정지/재생 토글
     func togglePlayPause() {
         guard let player = player else { return }
@@ -181,6 +198,7 @@ final class AudioPlayerManager: NSObject,ObservableObject {
             player.rate = playbackRate
         }
         updateNowPlayingTime()
+        onPlaybackStateChanged?(isPlaying, currentTime)
     }
 
     /// 정지
@@ -209,6 +227,7 @@ final class AudioPlayerManager: NSObject,ObservableObject {
             guard let self else { return }
             self.currentTime = clamped
             self.updateNowPlayingTime()
+            self.onPlaybackStateChanged?(self.isPlaying, self.currentTime)
         }
     }
 
