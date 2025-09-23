@@ -29,6 +29,7 @@ struct PlayerView: View {
     @State private var showPlaylist = false
     @State private var trackKey: String = ""
     @State private var playlistAutoAlignToken = 0
+    @State private var volumeAnimTimer: Timer?
     
 
     // 재정렬 토글
@@ -267,6 +268,8 @@ struct PlayerView: View {
                             sliderValue = 0
                             displayedTime = 0
                         }
+                        
+                        preloadLastPositionIfAvailable()
                     }
 
                     // (네가 쓰던 오버레이/그라데이션 그대로 유지)
@@ -320,9 +323,9 @@ struct PlayerView: View {
                     VolumeSliderView(volume: Binding(
                         get: { self.animatedVolume },
                         set: { newVolume in
-                            self.animatedVolume = newVolume
                             self.volume = newVolume
                             self.systemVolumeManager.setSystemVolume(newVolume)
+                            self.animateVolume(to: newVolume)
                         }
                     ))
                     .scaleEffect(isDragging ? 1.0125 : 1.0)
@@ -407,6 +410,8 @@ struct PlayerView: View {
             volumeObserver.start()
             
             trackKey = makeTrackKey(from: record)
+            
+            preloadLastPositionIfAvailable()
 
             // 시스템 볼륨 동기화
             volumeObserver.onVolumeChange = { newVolume in
@@ -414,7 +419,7 @@ struct PlayerView: View {
                     self.volume = newVolume
                     self.animatedVolume = newVolume
                     self.audioPlayer.setVolume(newVolume)
-                    self.startVolumeAnimation()
+                    self.animateVolume(to: newVolume)
                 }
             }
 
@@ -468,31 +473,84 @@ struct PlayerView: View {
         return scale
     }
 
-    private func startVolumeAnimation() {
-        volumeUpdateTimer?.invalidate()
-        volumeUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { timer in
-            let step: Float = 0.02
-            if abs(animatedVolume - volume) < step {
-                animatedVolume = volume
+    private func animateVolume(to target: Float, duration: Double = 0.18) {
+        volumeAnimTimer?.invalidate()
+
+        // 0...1로 클램프
+        let start = Double(self.animatedVolume.clamped(to: 0...1))
+        let end   = Double(target.clamped(to: 0...1))
+        let delta = end - start
+        let t0 = Date()
+
+        volumeAnimTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { timer in
+            let elapsed = Date().timeIntervalSince(t0)
+            var p = min(1.0, elapsed / duration)
+
+            // easeOutCubic
+            p = 1 - pow(1 - p, 3)
+
+            let v = start + delta * p
+            self.animatedVolume = Float(v)
+
+            if p >= 1.0 {
                 timer.invalidate()
-            } else if animatedVolume < volume {
-                animatedVolume += step
-            } else {
-                animatedVolume -= step
+                self.animatedVolume = Float(end)
             }
         }
     }
+
     
     private func syncSystemVolumeOnForeground() {
         let v = AVAudioSession.sharedInstance().outputVolume
         self.volume = v
         self.animatedVolume = v
         self.audioPlayer.setVolume(v)
-        self.startVolumeAnimation()
+        self.animateVolume(to: v)
 
         // 백그라운드 중 드랍된 KVO 대비: 짧게 재부착
         self.volumeObserver.stop()
         self.volumeObserver.start()
+    }
+    
+    private func preloadLastPositionIfAvailable() {
+        // 0) 1순위: PlayQueue 스냅샷에 남긴 마지막 재생 시점
+        if let snapshot = playQueue.getLastPlaybackState() {
+            let total: Double = (audioPlayer.duration > 1) ? audioPlayer.duration
+                                 : max(1, record.duration)
+            let clamped = min(max(0, snapshot.currentTime), total)
+
+            audioPlayer.currentTime = clamped
+            sliderValue = clamped
+            displayedTime = clamped
+            return
+        }
+
+        // 1) 키 후보 구성 (trackKey / 파일명 / UUID 문자열)
+        var keys: [String] = []
+        keys.append("lastPosition:\(trackKey)")
+        if let name = record.fileURL?.lastPathComponent {
+            keys.append("lastPosition:\(name)")
+        }
+        // ⚠️ record.id가 UUID(옵셔널 아님)라면 바로 문자열로 추가
+        keys.append("lastPosition:\(record.id.uuidString)")
+
+        // 2) 저장된 값 탐색 (UserDefaults.double은 없으면 0 반환 → 0 초과만 채택)
+        let storedOpt = keys
+            .lazy
+            .map { UserDefaults.standard.double(forKey: $0) }
+            .first(where: { $0 > 0 })
+
+        guard let pos = storedOpt else { return }
+
+        // 3) duration이 아직 초기값일 수 있으니 안전 클램프
+        let total: Double = (audioPlayer.duration > 1) ? audioPlayer.duration
+                             : max(1, record.duration)
+        let clamped = min(max(0, pos), total)
+
+        // 4) '표시용'만 선반영 — 실제 재생은 건드리지 않음
+        audioPlayer.currentTime = clamped
+        sliderValue = clamped
+        displayedTime = clamped
     }
 }
 
@@ -523,7 +581,7 @@ final class SystemVolumeObserver {
             if let v = chg.newValue { self?.onVolumeChange?(v) }
         }
     }
-
+    
     deinit { stop() }
 }
 
@@ -536,3 +594,8 @@ struct HiddenSystemVolumeView: UIViewRepresentable {
 
     func updateUIView(_ uiView: MPVolumeView, context: Context) {}
 }
+
+extension Comparable {
+  func clamped(to r: ClosedRange<Self>) -> Self { min(r.upperBound, max(r.lowerBound, self)) }
+}
+
