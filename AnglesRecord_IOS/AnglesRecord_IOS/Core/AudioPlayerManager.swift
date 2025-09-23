@@ -61,65 +61,69 @@ final class AudioPlayerManager: NSObject,ObservableObject {
                 }
             }
             .removeDuplicates()
-            .debounce(for: .milliseconds(120), scheduler: RunLoop.main) // ✨ 깜빡임 방지
+            .debounce(for: .milliseconds(120), scheduler: RunLoop.main)
             .receive(on: RunLoop.main)
             .sink { [weak self] st in
                 guard let self = self else { return }
+
+                // 1) UI state
                 self.uiState = st
-                // ⬇️ 팀원이 추가했던 콜백을 최신 흐름에 맞게 호출
-                self.onPlaybackStateChanged?(st == .playing, self.currentTime)
+
+                // 2) isPlaying/NowPlaying/콜백을 관찰값 기준으로 동기화
+                let playing = (st == .playing)
+                if self.isPlaying != playing {
+                    self.isPlaying = playing
+                    self.updateNowPlayingTime()
+                    self.onPlaybackStateChanged?(playing, self.currentTime)
+                }
             }
     }
+
+
 
     // MARK: - Public API
 
     /// 새로운 아이템 재생 시작
     func play(_ record: RecordListModel) {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            // duckOthers/mixWithOthers 쓰지 않는 걸 권장 (외부 미디어 인수인계 방해 가능)
-            try session.setCategory(.playback, mode: .default, options: [])
-            try session.setActive(true) // 이때 우리가 오디오를 잡음
-        } catch {
-            print("AudioSession activate error: \(error)")
-        }
-        
-        // 1) 기존 옵저버 제거
-        removeTimeObserverIfNeeded()
+        // 0) 세션부터 확실히 선점
+        ensurePlaybackSessionActive()
 
-        // 2) 기존 플레이어 정리
+        // 1) 정리
+        removeTimeObserverIfNeeded()
         player?.pause()
         player = nil
         isPlaying = false
-
-        // 3) 초기 시간 리셋
         currentTime = 0
 
-        // 4) 플레이어/아이템 준비
+        // 2) 아이템/플레이어
         currentRecord = record
         let item = AVPlayerItem(url: record.fileURL!)
         let newPlayer = AVPlayer(playerItem: item)
         newPlayer.volume = volume
         player = newPlayer
-        
+
+        // 3) 상태 관찰 선 설치
         observeTimeControlStatus(of: newPlayer)
 
-        // 5) duration 설정 (레코드가 주는 duration 우선)
+        // 4) 길이
         let dur = (record.duration > 0) ? record.duration : safeSeconds(item.asset.duration)
         duration = max(0, dur)
 
-        // 6) 타임 옵저버 + 리모트 커맨드 + Now Playing
+        // 5) 부가 세팅
         addPeriodicTimeObserver()
         setupRemoteCommandCenterIfNeeded()
         setupNowPlaying(record: record, full: true)
 
-        // 7) 재생 시작
-        isPlaying = true
-        player?.play()
+        // 6) 즉시 재생
         registerRemoteCommandsIfNeeded(true)
-        player?.rate = playbackRate // 배속 유지
+        isPlaying = true
+        player?.playImmediately(atRate: playbackRate) // 대기 없이 재생
         updateNowPlayingTime()
     }
+
+
+
+
     
     func pause(releaseToOthers: Bool = true) {
         player?.pause()
@@ -198,9 +202,9 @@ final class AudioPlayerManager: NSObject,ObservableObject {
             player.pause()
             isPlaying = false
         } else {
+            ensurePlaybackSessionActive()     // 🔑 추가
             isPlaying = true
-            player.play()
-            player.rate = playbackRate
+            player.playImmediately(atRate: playbackRate)
         }
         updateNowPlayingTime()
         onPlaybackStateChanged?(isPlaying, currentTime)
@@ -271,6 +275,20 @@ final class AudioPlayerManager: NSObject,ObservableObject {
     func setVolume(_ newVolume: Float) {
         volume = clamp(newVolume, lower: 0, upper: 1)
         player?.volume = volume
+    }
+
+    
+    private func ensurePlaybackSessionActive() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            // 혹시 남아있을 수 있는 이전 세션(ambient 등) 정리
+            try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+            // 독점 재생
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true, options: []) // 다른 앱 중지 유도
+        } catch {
+            print("❌ ensurePlaybackSessionActive error:", error)
+        }
     }
 
     // MARK: - Time Observer

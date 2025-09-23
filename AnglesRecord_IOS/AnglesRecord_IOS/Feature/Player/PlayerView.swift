@@ -184,6 +184,9 @@ struct PlayerView: View {
                         onMove: { from, to in playQueue.move(fromOffsets: from, toOffset: to) },
                         onTap: { tapped in
                             if let idx = playQueue.items.firstIndex(where: { $0.id == tapped.id }) {
+                                // 🔑 재생 전 옵저버 정리
+                                volumeObserver.stop()
+
                                 playQueue.setFromRecords(playQueue.items, startAt: idx)
                                 record = tapped
                                 audioPlayer.play(tapped)
@@ -290,9 +293,11 @@ struct PlayerView: View {
                         }
 
                         Button {
-                            withAnimation(.easeIn(duration: 0.1)) {
-                                playButtonScale = 0.8
-                            }
+                            withAnimation(.easeIn(duration: 0.1)) { playButtonScale = 0.8 }
+
+                            // 🔑 재생 시도 ‘직전’에 옵저버 세션 확실히 정리
+                            volumeObserver.stop()
+
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 audioPlayer.togglePlayPause()
                                 withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) {
@@ -494,18 +499,16 @@ final class SystemVolumeObserver {
     func start() {
         guard !isEnabled else { return }
         isEnabled = true
-        // 🔊 관찰 전용: 외부 오디오를 끊지 않는 ambient + mix
-        try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
-        try? session.setActive(true) // 외부 재생 유지됨
+        // ✅ 카테고리/액티브 설정 제거 (세션 뺏지 않도록)
         attachKVO()
     }
 
     func stop() {
         guard isEnabled else { return }
         isEnabled = false
-        observation?.invalidate(); observation = nil
-        // 관찰만 끄는 용도 — 실제 재생 중이 아니면 세션 반납
-        try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+        observation?.invalidate()
+        observation = nil
+        // ✅ 굳이 setActive(false)도 호출하지 않음 (재생 세션과 충돌 방지)
     }
 
     private func attachKVO() {
