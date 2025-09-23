@@ -29,6 +29,7 @@ struct PlayerView: View {
     @State private var showPlaylist = false
     @State private var trackKey: String = ""
     @State private var playlistAutoAlignToken = 0
+    
 
     // 재정렬 토글
     @State private var editMode: EditMode = .active
@@ -184,9 +185,6 @@ struct PlayerView: View {
                         onMove: { from, to in playQueue.move(fromOffsets: from, toOffset: to) },
                         onTap: { tapped in
                             if let idx = playQueue.items.firstIndex(where: { $0.id == tapped.id }) {
-                                // 🔑 재생 전 옵저버 정리
-                                volumeObserver.stop()
-
                                 playQueue.setFromRecords(playQueue.items, startAt: idx)
                                 record = tapped
                                 audioPlayer.play(tapped)
@@ -294,10 +292,6 @@ struct PlayerView: View {
 
                         Button {
                             withAnimation(.easeIn(duration: 0.1)) { playButtonScale = 0.8 }
-
-                            // 🔑 재생 시도 ‘직전’에 옵저버 세션 확실히 정리
-                            volumeObserver.stop()
-
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 audioPlayer.togglePlayPause()
                                 withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) {
@@ -410,7 +404,7 @@ struct PlayerView: View {
             }
         }
         .onAppear {
-            if audioPlayer.uiState != .playing { volumeObserver.start() }
+            volumeObserver.start()
             
             trackKey = makeTrackKey(from: record)
 
@@ -449,15 +443,10 @@ struct PlayerView: View {
         .onDisappear {
             volumeObserver.stop()
         }
-        // 재생 상태 변화에 따라 토글
-        .onChange(of: audioPlayer.uiState) { st in
-            if st == .playing { volumeObserver.stop() } else { volumeObserver.start() }
-        }
         // 포그라운드 복귀 시 재부팅 (일부 기기에서 KVO가 드랍되는 대비)
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            if audioPlayer.uiState != .playing {
-                volumeObserver.stop(); volumeObserver.start()
-            }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.mediaServicesWereResetNotification)) { _ in
+            volumeObserver.stop()
+            volumeObserver.start()
         }
     }
 
