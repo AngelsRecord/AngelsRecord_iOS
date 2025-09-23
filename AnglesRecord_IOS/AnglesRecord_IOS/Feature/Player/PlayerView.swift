@@ -448,6 +448,12 @@ struct PlayerView: View {
             volumeObserver.stop()
             volumeObserver.start()
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            syncSystemVolumeOnForeground()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            syncSystemVolumeOnForeground()
+        }
     }
 
     // MARK: - Helpers
@@ -475,6 +481,18 @@ struct PlayerView: View {
                 animatedVolume -= step
             }
         }
+    }
+    
+    private func syncSystemVolumeOnForeground() {
+        let v = AVAudioSession.sharedInstance().outputVolume
+        self.volume = v
+        self.animatedVolume = v
+        self.audioPlayer.setVolume(v)
+        self.startVolumeAnimation()
+
+        // 백그라운드 중 드랍된 KVO 대비: 짧게 재부착
+        self.volumeObserver.stop()
+        self.volumeObserver.start()
     }
 }
 
