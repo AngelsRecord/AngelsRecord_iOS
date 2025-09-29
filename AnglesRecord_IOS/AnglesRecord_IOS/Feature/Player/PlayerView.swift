@@ -224,6 +224,8 @@ struct PlayerView: View {
                                 audioPlayer: audioPlayer,
                                 trackKey: trackKey
                             )
+                            .scaleEffect(isDragging ? 1.0125 : 1.0)
+                            .animation(.easeInOut(duration: 0.2), value: isDragging)
                             .allowsHitTesting(false)
                         } else {
                             PlaybackSliderView(
@@ -235,6 +237,8 @@ struct PlayerView: View {
                                 audioPlayer: audioPlayer,
                                 trackKey: trackKey
                             )
+                            .scaleEffect(isDragging ? 1.0125 : 1.0)
+                            .animation(.easeInOut(duration: 0.2), value: isDragging)
                         }
                     }
                     .id("\(trackKey)-\(isDownloading ? "loading" : "ready")")
@@ -317,8 +321,6 @@ struct PlayerView: View {
                         }
                     }
                     .padding(.top, 36)
-                    .scaleEffect(isDragging ? 1.0125 : 1.0)
-                    .animation(.easeInOut(duration: 0.2), value: isDragging)
 
                     VolumeSliderView(volume: Binding(
                         get: { self.animatedVolume },
@@ -328,8 +330,6 @@ struct PlayerView: View {
                             self.animateVolume(to: newVolume)
                         }
                     ))
-                    .scaleEffect(isDragging ? 1.0125 : 1.0)
-                    .animation(.easeInOut(duration: 0.2), value: isDragging)
                     .padding(.top, 32)
                     .padding(.horizontal, 24)
 
