@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 enum AuthStatus {
     case loading
@@ -32,7 +33,11 @@ struct AnglesRecord_IOSApp: App {
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         return try! ModelContainer(for: schema, configurations: [config])
     }()
-
+    
+    init() {
+        CarPlayCatalog.shared.start()
+    }
+    
     var body: some Scene {
         WindowGroup {
             Group {
@@ -119,3 +124,4 @@ struct AnglesRecord_IOSApp: App {
         return false
     }
 }
+
